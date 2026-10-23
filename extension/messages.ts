@@ -1,5 +1,6 @@
 import { browser, type Browser } from 'wxt/browser';
-import type { FeedbackComment, FeedbackSession, LogEntry, TimelineEvent } from './types';
+import type { FeedbackComment, FeedbackSession, LogEntry, TimelineEvent } from '@/core/types';
+import type { ComponentInfo, NewComment, PageEvent, Screenshots } from '@/core/host';
 
 /** Messages from content script / popup to the background service worker. */
 export type Request =
@@ -11,8 +12,8 @@ export type Request =
   | { type: 'capture:viewport' }
   | {
       type: 'comment:add';
-      comment: Omit<FeedbackComment, 'id' | 'index' | 'timelineIndex' | 'screenshots'>;
-      screenshots: { viewport?: string; crop?: string };
+      comment: NewComment;
+      screenshots: Screenshots;
     }
   | { type: 'comment:update'; id: string; text: string }
   | { type: 'comment:delete'; id: string }
@@ -68,10 +69,9 @@ export const BRIDGE_SOURCE = 'agent-feedback-bridge';
 export const CONTENT_SOURCE = 'agent-feedback-content';
 
 export type BridgeToContent =
-  | { type: 'log'; level: 'error' | 'warn'; message: string; stack?: string }
-  | { type: 'navigate'; url: string }
+  | PageEvent
   | { type: 'context'; requestId: string; metadata: Record<string, unknown> }
-  | { type: 'probe-result'; requestId: string; components?: string[]; sourceFile?: string; minified?: boolean };
+  | ({ type: 'probe-result'; requestId: string } & ComponentInfo);
 
 export type ContentToBridge =
   | { type: 'request-context'; requestId: string }

@@ -1,55 +1,15 @@
 import { browser, type Browser } from 'wxt/browser';
-import { handle, type Request } from '@/lib/messages';
-import { exportFolderName, renderJson, renderMarkdown, assetFileNames } from '@/lib/render';
-import type { FeedbackComment, FeedbackSession } from '@/lib/types';
-
-const SESSION_KEY = 'session';
-const ASSET_PREFIX = 'asset:';
-const MAX_LOGS = 500;
-const MAX_TIMELINE = 1000;
+import { handle, type Request } from '@/extension/messages';
+import { createSessionStore, type KVBackend } from '@/core/session-store';
 
 // Service workers can be killed at any time, so all state lives in storage.local.
-// Writes are serialized because messages from several tabs can arrive concurrently.
-let queue: Promise<unknown> = Promise.resolve();
-function serialized<T>(fn: () => Promise<T>): Promise<T> {
-  const run = queue.then(fn, fn);
-  queue = run.catch(() => undefined);
-  return run;
-}
-
-async function load(): Promise<FeedbackSession | null> {
-  const res = await browser.storage.local.get(SESSION_KEY);
-  return (res[SESSION_KEY] as FeedbackSession | undefined) ?? null;
-}
-
-async function save(session: FeedbackSession) {
-  await browser.storage.local.set({ [SESSION_KEY]: session });
-}
-
-function mutate(fn: (s: FeedbackSession) => void): Promise<FeedbackSession | null> {
-  return serialized(async () => {
-    const s = await load();
-    if (!s) return null;
-    fn(s);
-    await save(s);
-    return s;
-  });
-}
-
-const uid = () => crypto.randomUUID().slice(0, 8);
-
-async function storeAsset(dataUrl: string | undefined): Promise<string | undefined> {
-  if (!dataUrl) return undefined;
-  const id = uid();
-  await browser.storage.local.set({ [ASSET_PREFIX + id]: dataUrl });
-  return id;
-}
-
-async function clearAssets() {
-  const all = await browser.storage.local.get(null);
-  const keys = Object.keys(all).filter((k) => k.startsWith(ASSET_PREFIX));
-  if (keys.length) await browser.storage.local.remove(keys);
-}
+const kv: KVBackend = {
+  get: (keys) => browser.storage.local.get(keys),
+  set: (items) => browser.storage.local.set(items),
+  remove: (keys) => browser.storage.local.remove(keys),
+  keys: async () => Object.keys(await browser.storage.local.get(null)),
+};
+const store = createSessionStore(kv);
 
 function dataUrl(mime: string, text: string): string {
   const bytes = new TextEncoder().encode(text);
@@ -85,19 +45,13 @@ async function downloadedPath(id: number): Promise<string | undefined> {
 }
 
 async function exportFolder(): Promise<{ folder: string; path?: string; files: number; copied: boolean }> {
-  const session = await load();
-  if (!session) throw new Error('Keine Session vorhanden');
-  const folder = `agent-feedback/${exportFolderName(session)}`;
+  const bundle = await store.bundle();
+  const folder = `agent-feedback/${bundle.folderName}`;
   const files: { name: string; url: string }[] = [
-    { name: 'feedback.md', url: dataUrl('text/markdown', renderMarkdown(session)) },
-    { name: 'feedback.json', url: dataUrl('application/json', renderJson(session)) },
+    { name: 'feedback.md', url: dataUrl('text/markdown', bundle.markdown) },
+    { name: 'feedback.json', url: dataUrl('application/json', bundle.json) },
+    ...bundle.assets.map((a) => ({ name: a.name, url: a.dataUrl })),
   ];
-  const names = assetFileNames(session);
-  const assets = await browser.storage.local.get([...names.keys()].map((id) => ASSET_PREFIX + id));
-  for (const [id, name] of names) {
-    const url = assets[ASSET_PREFIX + id] as string | undefined;
-    if (url) files.push({ name, url });
-  }
   const ids: number[] = [];
   for (const f of files) {
     ids.push(
@@ -119,145 +73,43 @@ async function exportFolder(): Promise<{ folder: string; path?: string; files: n
 async function onRequest(req: Request, sender: Browser.runtime.MessageSender): Promise<unknown> {
   switch (req.type) {
     case 'session:get':
-      return load();
-
-    case 'session:start':
-      return serialized(async () => {
-        const existing = await load();
-        if (existing?.active) return existing;
-        await clearAssets();
-        const session: FeedbackSession = {
-          id: uid(),
-          startedAt: Date.now(),
-          active: true,
-          comments: [],
-          timeline: [],
-          logs: [],
-          metadata: {},
-          userAgent: navigator.userAgent,
-        };
-        // The page the session was started on already loaded, so record it as the first step.
-        const tab = sender.tab?.url?.startsWith('http')
-          ? sender.tab
-          : (await browser.tabs.query({ active: true, lastFocusedWindow: true }))[0];
-        if (tab?.url?.startsWith('http')) {
-          session.timeline.push({ type: 'navigate', at: Date.now(), url: tab.url, title: tab.title || undefined });
-        }
-        await save(session);
-        return session;
-      });
-
+      return store.load();
+    case 'session:start': {
+      // The page the session was started on already loaded, so record it as the first step.
+      const tab = sender.tab?.url?.startsWith('http')
+        ? sender.tab
+        : (await browser.tabs.query({ active: true, lastFocusedWindow: true }))[0];
+      return store.start(tab?.url?.startsWith('http') ? { url: tab.url, title: tab.title } : undefined);
+    }
     case 'session:stop':
-      return mutate((s) => {
-        s.active = false;
-        s.endedAt = Date.now();
-      });
-
+      return store.stop();
     case 'session:resume':
-      return mutate((s) => {
-        s.active = true;
-        s.endedAt = undefined;
-      });
-
+      return store.resume();
     case 'session:discard':
-      return serialized(async () => {
-        await browser.storage.local.remove(SESSION_KEY);
-        await clearAssets();
-        return null;
-      });
-
+      return store.discard();
     case 'capture:viewport': {
       const windowId = sender.tab?.windowId;
       if (windowId == null) throw new Error('Kein Tab');
       return browser.tabs.captureVisibleTab(windowId, { format: 'png' });
     }
-
-    case 'comment:add': {
-      const [viewport, crop] = await Promise.all([
-        storeAsset(req.screenshots.viewport),
-        storeAsset(req.screenshots.crop),
-      ]);
-      let created: FeedbackComment | undefined;
-      await mutate((s) => {
-        const index = (s.comments.at(-1)?.index ?? 0) + 1;
-        created = {
-          ...req.comment,
-          id: uid(),
-          index,
-          timelineIndex: s.timeline.length - 1,
-          screenshots: { viewport, crop },
-        };
-        s.comments.push(created);
-        if (created.metadata && Object.keys(created.metadata).length) {
-          s.metadata[new URL(created.url).origin] = created.metadata;
-        }
-        s.timeline.push({ type: 'comment', at: created.createdAt, url: created.url, commentId: created.id, commentIndex: index });
-      });
-      if (!created) throw new Error('Keine aktive Session');
-      return created;
-    }
-
+    case 'comment:add':
+      return store.addComment(req.comment, req.screenshots);
     case 'comment:update':
-      await mutate((s) => {
-        const c = s.comments.find((c) => c.id === req.id);
-        if (c) c.text = req.text;
-      });
-      return null;
-
+      return store.updateComment(req.id, req.text);
     case 'comment:delete':
-      return serialized(async () => {
-        const s = await load();
-        const c = s?.comments.find((c) => c.id === req.id);
-        if (!s || !c) return null;
-        s.comments = s.comments.filter((x) => x.id !== req.id);
-        s.timeline = s.timeline.filter((e) => !(e.type === 'comment' && e.commentId === req.id));
-        await save(s);
-        const keys = [c.screenshots.viewport, c.screenshots.crop].filter(Boolean).map((id) => ASSET_PREFIX + id);
-        if (keys.length) await browser.storage.local.remove(keys);
-        return null;
-      });
-
+      return store.deleteComment(req.id);
     case 'timeline:add':
-      await mutate((s) => {
-        if (!s.active) return;
-        const last = s.timeline.at(-1);
-        // Collapse repeated navigations (SPA routers often fire pushState + replaceState)
-        if (req.event.type === 'navigate' && last?.type === 'navigate' && last.url === req.event.url) return;
-        // Collapse consecutive edits of the same field into the final value
-        if (req.event.type === 'input' && last?.type === 'input' && last.target === req.event.target) {
-          s.timeline[s.timeline.length - 1] = req.event;
-          return;
-        }
-        s.timeline.push(req.event);
-        if (s.timeline.length > MAX_TIMELINE) s.timeline.splice(0, s.timeline.length - MAX_TIMELINE);
-      });
-      return null;
-
+      return store.addTimeline(req.event);
     case 'log:add':
-      await mutate((s) => {
-        if (!s.active) return;
-        s.logs.push(req.entry);
-        if (s.logs.length > MAX_LOGS) s.logs.splice(0, s.logs.length - MAX_LOGS);
-      });
-      return null;
-
+      return store.addLog(req.entry);
     case 'metadata:set':
-      await mutate((s) => {
-        s.metadata[req.origin] = req.metadata;
-      });
-      return null;
-
+      return store.setMetadata(req.origin, req.metadata);
     case 'export:folder':
       return exportFolder();
-
     case 'clipboard:copy':
       return copyToClipboard(req.text);
-
-    case 'export:markdown': {
-      const s = await load();
-      if (!s) throw new Error('Keine Session vorhanden');
-      return renderMarkdown(s);
-    }
+    case 'export:markdown':
+      return (await store.bundle()).markdown;
   }
 }
 

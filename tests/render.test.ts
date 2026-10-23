@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { renderJson, renderMarkdown, assetFileNames } from '@/lib/render';
-import type { FeedbackSession } from '@/lib/types';
+import { renderJson, renderMarkdown, assetFileNames } from '@/core/render';
+import type { FeedbackSession } from '@/core/types';
 
 const t0 = new Date(2026, 9, 23, 14, 2, 0).getTime();
 
@@ -87,7 +87,7 @@ describe('renderJson', () => {
 
 describe('exportFolderName', () => {
   it('uses the export time including seconds', async () => {
-    const { exportFolderName } = await import('@/lib/render');
+    const { exportFolderName } = await import('@/core/render');
     const at = new Date(2026, 9, 23, 15, 7, 9).getTime();
     expect(exportFolderName(session, at)).toBe('2026-10-23_15-07-09_localhost_3000');
   });

@@ -1,7 +1,8 @@
 import ReactDOM from 'react-dom/client';
-import './style.css';
+import '@/core/ui/style.css';
 import { browser } from 'wxt/browser';
-import { App } from './App';
+import { App } from '@/core/ui/App';
+import { createExtensionHost } from '@/extension/host';
 
 export default defineContentScript({
   matches: ['<all_urls>'],
@@ -15,6 +16,7 @@ export default defineContentScript({
     // UI left behind by an orphaned copy from a previous extension version
     document.querySelectorAll('agent-feedback-ui').forEach((el) => el.remove());
 
+    const api = createExtensionHost();
     const ui = await createShadowRootUi(ctx, {
       name: 'agent-feedback-ui',
       position: 'overlay',
@@ -25,7 +27,7 @@ export default defineContentScript({
       isolateEvents: ['keydown', 'keyup', 'keypress', 'pointerdown', 'mousedown', 'mouseup', 'focusin', 'focusout'],
       onMount(container, _shadow, host) {
         const root = ReactDOM.createRoot(container);
-        root.render(<App host={host} />);
+        root.render(<App host={host} api={api} />);
         return root;
       },
       onRemove(root) {

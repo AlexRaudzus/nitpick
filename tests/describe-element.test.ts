@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
-import { describeElement, getAccessibleName, getRole, shortLabel } from '@/lib/describe-element';
-import { isSensitiveField } from '@/lib/redact';
+import { describeElement, getAccessibleName, getRole, shortLabel } from '@/core/describe-element';
+import { isSensitiveField } from '@/core/redact';
 
 describe('describeElement', () => {
   it('collects role, name, test id and a unique selector', () => {
@@ -35,7 +35,7 @@ describe('describeElement', () => {
 
 describe('getContext', () => {
   it('uses the closest preceding heading and does not cross into other page regions', async () => {
-    const { getContext } = await import('@/lib/describe-element');
+    const { getContext } = await import('@/core/describe-element');
     document.body.innerHTML = `
       <nav aria-label="Sidebar"><ul><li><a href="/horizon"><span id="icon">*</span></a></li></ul></nav>
       <main>
@@ -49,7 +49,7 @@ describe('getContext', () => {
   });
 
   it('anchors long selectors at a stable attribute', async () => {
-    const { getCssSelector } = await import('@/lib/describe-element');
+    const { getCssSelector } = await import('@/core/describe-element');
     const deep = '<div><div>'.repeat(12) + '<a href="/settings/horizon"><div class="x"></div></a>' + '</div></div>'.repeat(12);
     document.body.innerHTML = deep + deep.replace('/settings/horizon', '/settings/other');
     const target = document.querySelector('a[href="/settings/horizon"] > div')!;

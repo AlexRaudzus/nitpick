@@ -89,11 +89,20 @@ try {
   await note.waitFor({ timeout: 2000 });
   await page.waitForTimeout(300); // let the animation finish for the screenshot
   await page.screenshot({ path: join(out, 'drawer-note.png') });
-  await note.fill('Seite lädt insgesamt langsam');
-  await note.press('Control+Enter');
+  await note.fill('Seite lädt');
+  // No save button: hovering over "Liste" switches the drawer and must not lose the text
+  await toolbar.getByRole('button', { name: 'Liste' }).hover();
   await page.waitForFunction(() =>
     document.querySelector('agent-feedback-ui')?.shadowRoot?.querySelector('.af-rec')?.textContent?.includes('3'),
   );
+  // Reopening shows the note; further edits update it in place (no second comment)
+  await toolbar.getByRole('button', { name: 'Notiz' }).hover();
+  await note.waitFor({ timeout: 2000 });
+  if ((await note.inputValue()) !== 'Seite lädt') fail(`note not restored: "${await note.inputValue()}"`);
+  await note.fill('Seite lädt insgesamt langsam');
+  await page.waitForTimeout(900);
+  await page.mouse.move(100, 100);
+  await page.waitForTimeout(500);
 
   await page.screenshot({ path: join(out, 'page-with-pins.png') });
   // 4) One-shot pick via "+ Kommentar" ends after one element

@@ -1,16 +1,19 @@
-import { send } from '@/lib/messages';
-import { interactiveAncestor, shortLabel } from '@/lib/describe-element';
-import { isSensitiveField, redactText, truncate } from '@/lib/redact';
-import type { TimelineEvent } from '@/lib/types';
-import { onBridgeMessage, requestContext } from './bridge-client';
+import { interactiveAncestor, shortLabel } from '../describe-element';
+import type { FeedbackHost } from '../host';
+import { isSensitiveField, redactText, truncate } from '../redact';
+import type { TimelineEvent } from '../types';
 
 /**
  * Records the action timeline and console errors while a session is active.
  * `isOwnUi` filters out interactions with our toolbar.
  */
-export function startRecorder(isActive: () => boolean, isOwnUi: (ev: Event) => boolean): () => void {
+export function startRecorder(
+  host: FeedbackHost,
+  isActive: () => boolean,
+  isOwnUi: (ev: Event) => boolean,
+): () => void {
   const push = (event: TimelineEvent) => {
-    if (isActive()) send({ type: 'timeline:add', event }).catch(() => undefined);
+    if (isActive()) host.addTimeline(event).catch(() => undefined);
   };
   const onClick = (ev: MouseEvent) => {
     if (isOwnUi(ev)) return;
@@ -52,17 +55,16 @@ export function startRecorder(isActive: () => boolean, isOwnUi: (ev: Event) => b
 
   const reportContext = async () => {
     if (!isActive()) return;
-    const metadata = await requestContext();
-    if (Object.keys(metadata).length) send({ type: 'metadata:set', origin: location.origin, metadata }).catch(() => undefined);
+    const metadata = await host.requestContext();
+    if (Object.keys(metadata).length) host.setMetadata(location.origin, metadata).catch(() => undefined);
   };
 
-  const offBridge = onBridgeMessage((msg) => {
+  const offPage = host.onPageEvent((msg) => {
     if (msg.type === 'navigate') navigated(msg.url);
     if (msg.type === 'log' && isActive()) {
-      send({
-        type: 'log:add',
-        entry: { at: Date.now(), url: location.href, level: msg.level, message: msg.message, stack: msg.stack },
-      }).catch(() => undefined);
+      host
+        .addLog({ at: Date.now(), url: location.href, level: msg.level, message: msg.message, stack: msg.stack })
+        .catch(() => undefined);
     }
   });
 
@@ -72,6 +74,6 @@ export function startRecorder(isActive: () => boolean, isOwnUi: (ev: Event) => b
     document.removeEventListener('click', onClick, true);
     document.removeEventListener('change', onChange, true);
     document.removeEventListener('submit', onSubmit, true);
-    offBridge();
+    offPage();
   };
 }

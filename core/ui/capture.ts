@@ -1,5 +1,4 @@
-import { send } from '@/lib/messages';
-import type { Rect } from '@/lib/types';
+import type { Rect } from '../types';
 
 const ACCENT = '#ff3b6b';
 const CROP_PADDING = 48;
@@ -14,7 +13,7 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 }
 
 /** Wait until the browser has actually presented a frame without our UI. */
-const nextPaint = () =>
+export const nextPaint = () =>
   new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 60))));
 
 /**
@@ -23,18 +22,19 @@ const nextPaint = () =>
  *  - crop: close-up of `rect` with some surrounding context
  */
 export async function captureScreenshots(
+  captureViewport: () => Promise<string>,
   uiRoot: HTMLElement,
   rect: Rect | undefined,
   marker: number,
 ): Promise<{ viewport: string; crop?: string }> {
   // Hide our container inside the shadow root; styles on the host itself are overridden by
-  // WXT's `:host { all: initial !important }` reset.
+  // the `:host { all: initial !important }` reset.
   const previous = uiRoot.style.display;
   uiRoot.style.display = 'none';
   await nextPaint();
   let raw: string;
   try {
-    raw = await send({ type: 'capture:viewport' });
+    raw = await captureViewport();
   } finally {
     uiRoot.style.display = previous;
   }

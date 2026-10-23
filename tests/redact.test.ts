@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { redactText } from '@/lib/redact';
+import { redactText } from '@/core/redact';
 
 describe('redactText', () => {
   it('masks JWTs, bearer tokens and key=value secrets', () => {

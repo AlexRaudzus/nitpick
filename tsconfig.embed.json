@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "outDir": "dist/embed/types",
+    "rootDir": "."
+  },
+  "include": ["embed/**/*.ts", "core/**/*.ts", "core/**/*.tsx", ".wxt/wxt.d.ts"]
+}

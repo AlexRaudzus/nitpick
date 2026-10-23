@@ -1,12 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { browser } from 'wxt/browser';
-import { send } from '@/lib/messages';
-import { describeElement } from '@/lib/describe-element';
-import type { CommentKind, FeedbackComment, FeedbackSession, Rect } from '@/lib/types';
-import { probeComponents, requestContext } from './bridge-client';
+import { describeElement } from '../describe-element';
+import type { FeedbackHost } from '../host';
+import type { CommentKind, FeedbackComment, FeedbackSession, Rect } from '../types';
 import { captureScreenshots } from './capture';
+import { ConfirmButton } from './ConfirmButton';
 import { startRecorder } from './recorder';
-import { ConfirmButton } from '@/components/ConfirmButton';
 
 type Mode = 'idle' | 'pick' | 'region';
 
@@ -39,7 +37,11 @@ function holdPressed(e: KeyboardEvent | MouseEvent): boolean {
 
 type Drawer = 'note' | 'list' | null;
 
-export function App({ host }: { host: HTMLElement }) {
+/**
+ * Toolbar, picker and composer. `host` is the shadow host element of the UI (used to tell our own
+ * events apart from the page's), `api` connects it to the extension or the embed.
+ */
+export function App({ host, api }: { host: HTMLElement; api: FeedbackHost }) {
   const [session, setSession] = useState<FeedbackSession | null>(null);
   // Picker is active while the hold keys are pressed, or for a single pick after clicking "Kommentar".
   const [held, setHeld] = useState(false);
@@ -97,34 +99,30 @@ export function App({ host }: { host: HTMLElement }) {
     setTimeout(() => setToast((t) => (t === msg ? null : t)), 3500);
   }, []);
 
-  // Session state is owned by the background; mirror it from storage.
+  // Session state is owned by the host (service worker / IndexedDB); mirror it.
   useEffect(() => {
-    // A storage change can arrive before the initial read resolves; never let the stale read win.
+    // A change can arrive before the initial read resolves; never let the stale read win.
     let changed = false;
-    send({ type: 'session:get' }).then((s) => !changed && setSession(s), () => undefined);
-    const onChange = (changes: Record<string, { newValue?: unknown }>, area: string) => {
-      if (area !== 'local' || !('session' in changes)) return;
+    api.load().then((s) => !changed && setSession(s), () => undefined);
+    return api.subscribe((s) => {
       changed = true;
-      setSession((changes.session.newValue as FeedbackSession) ?? null);
-    };
-    browser.storage.onChanged.addListener(onChange);
-    return () => browser.storage.onChanged.removeListener(onChange);
-  }, []);
+      setSession(s);
+    });
+  }, [api]);
 
-  useEffect(() => startRecorder(() => !!sessionRef.current?.active, isOwnUi), [isOwnUi]);
+  useEffect(() => startRecorder(api, () => !!sessionRef.current?.active, isOwnUi), [api, isOwnUi]);
 
-  // Keyboard command from the background (Alt+Shift+C): pick one element
-  useEffect(() => {
-    const onMessage = (msg: unknown) => {
-      if ((msg as { type?: string })?.type !== 'command') return;
-      if (!sessionRef.current?.active) send({ type: 'session:start' });
-      setDraft(null);
-      setRegionActive(false);
-      setOneShot((v) => !v);
-    };
-    browser.runtime.onMessage.addListener(onMessage);
-    return () => browser.runtime.onMessage.removeListener(onMessage);
-  }, []);
+  // External trigger (keyboard command of the extension): pick one element
+  useEffect(
+    () =>
+      api.onPickCommand?.(() => {
+        if (!sessionRef.current?.active) api.start();
+        setDraft(null);
+        setRegionActive(false);
+        setOneShot((v) => !v);
+      }),
+    [api],
+  );
 
   // Hold-to-comment
   useEffect(() => {
@@ -243,29 +241,28 @@ export function App({ host }: { host: HTMLElement }) {
 
   // ---- Saving ---------------------------------------------------------------
   const [saving, setSaving] = useState(false);
-  const saveComment = async (d: Draft, text: string): Promise<boolean> => {
-    if (!session) return false;
+  const saveComment = async (d: Draft, text: string): Promise<FeedbackComment | null> => {
+    if (!session) return null;
     setSaving(true);
     try {
       let element = undefined;
       let rect = d.rect;
       if (d.element?.isConnected) {
-        element = { ...describeElement(d.element), ...(await probeComponents(d.element)) };
+        element = { ...describeElement(d.element), ...(await api.probeComponents(d.element)) };
         rect = element.viewportRect;
       } else if (d.kind === 'region' && rect) {
         // Give the agent a code anchor for the area: the innermost page element at its center
         const center = document
           .elementsFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)
           .find((el) => el !== host && !host.contains(el) && el !== document.documentElement && el !== document.body);
-        if (center) element = { ...describeElement(center), ...(await probeComponents(center)) };
+        if (center) element = { ...describeElement(center), ...(await api.probeComponents(center)) };
       }
       const [metadata, screenshots] = await Promise.all([
-        requestContext(),
-        captureScreenshots(rootRef.current!, rect, (session.comments.at(-1)?.index ?? 0) + 1),
+        api.requestContext(),
+        captureScreenshots(() => api.captureViewport(), rootRef.current!, rect, (session.comments.at(-1)?.index ?? 0) + 1),
       ]);
-      await send({
-        type: 'comment:add',
-        comment: {
+      const created = await api.addComment(
+        {
           kind: d.kind,
           text,
           createdAt: Date.now(),
@@ -283,28 +280,48 @@ export function App({ host }: { host: HTMLElement }) {
           },
         },
         screenshots,
-      });
-      return true;
+      );
+      // Show it right away; the authoritative state follows via subscribe
+      const s = sessionRef.current;
+      if (s && !s.comments.some((c) => c.id === created.id)) {
+        sessionRef.current = { ...s, comments: [...s.comments, created] };
+        setSession(sessionRef.current);
+      }
+      return created;
     } catch (err) {
       notify(`Speichern fehlgeschlagen: ${err instanceof Error ? err.message : err}`);
-      return false;
+      return null;
     } finally {
       setSaving(false);
     }
   };
 
-  const exportFolder = async () => {
-    try {
-      const res = await send({ type: 'export:folder' });
-      notify(res.copied ? `Exportiert · Pfad kopiert: ${res.path}` : `${res.files} Dateien in Downloads/${res.folder} gespeichert`);
-    } catch (err) {
-      notify(`Export fehlgeschlagen: ${err instanceof Error ? err.message : err}`);
-    }
+  // One note per page, saved automatically: edits update it, emptying it deletes it.
+  const noteQueue = useRef<Promise<unknown>>(Promise.resolve());
+  const pageNote = () =>
+    sessionRef.current?.comments.findLast((c) => c.kind === 'note' && samePage(c.url, location.href));
+  const persistNote = (raw: string) => {
+    const text = raw.trim();
+    const run = async () => {
+      const existing = pageNote();
+      if (existing) {
+        if (!text) await api.deleteComment(existing.id);
+        else if (text !== existing.text) await api.updateComment(existing.id, text);
+      } else if (text && sessionRef.current?.active) {
+        await saveComment({ kind: 'note' }, text);
+      }
+    };
+    noteQueue.current = noteQueue.current.then(run, run);
+    return noteQueue.current;
   };
 
-  const copyMarkdown = async () => {
-    const md = await send({ type: 'export:markdown' });
-    notify((await send({ type: 'clipboard:copy', text: md })) ? 'Markdown kopiert (ohne Screenshots)' : 'Kopieren fehlgeschlagen');
+  const runAction = async (run: () => Promise<string | void>) => {
+    try {
+      const msg = await run();
+      if (msg) notify(msg);
+    } catch (err) {
+      notify(`Fehlgeschlagen: ${err instanceof Error ? err.message : err}`);
+    }
   };
 
   if (!session) return null;
@@ -365,15 +382,16 @@ export function App({ host }: { host: HTMLElement }) {
           <div className="af-drawer-inner">
             {drawer === 'note' && (
               <NoteForm
+                key={location.pathname}
+                initial={pageNote()?.text ?? ''}
+                exists={!!pageNote()}
                 saving={saving}
                 onEngage={() => setDrawerPinned(true)}
-                onCancel={closeDrawer}
-                onSave={async (text) => {
-                  if (await saveComment({ kind: 'note' }, text)) closeDrawer();
-                }}
+                onClose={closeDrawer}
+                onPersist={persistNote}
               />
             )}
-            {drawer === 'list' && <CommentList session={session} onEngage={() => setDrawerPinned(true)} />}
+            {drawer === 'list' && <CommentList api={api} session={session} onEngage={() => setDrawerPinned(true)} />}
           </div>
         </div>
 
@@ -415,24 +433,25 @@ export function App({ host }: { host: HTMLElement }) {
               </button>
               <span className="af-sep" />
               {listButton}
-              <button className="af-primary" onClick={() => send({ type: 'session:stop' })}>
+              <button className="af-primary" onClick={() => api.stop()}>
                 Fertig
               </button>
             </>
           ) : (
             <>
               <span className="af-label">Beendet · {session.comments.length}</span>
-              <button className="af-primary" onClick={exportFolder}>
-                Exportieren
-              </button>
-              <button onClick={copyMarkdown}>Markdown kopieren</button>
+              {api.finishActions.map((a) => (
+                <button key={a.label} className={a.primary ? 'af-primary' : ''} onClick={() => runAction(a.run)}>
+                  {a.label}
+                </button>
+              ))}
               {listButton}
-              <button onClick={() => send({ type: 'session:resume' })}>Fortsetzen</button>
+              <button onClick={() => api.resume()}>Fortsetzen</button>
               <ConfirmButton
                 label="Verwerfen"
                 question="Alle verwerfen?"
                 className="af-danger"
-                onConfirm={() => send({ type: 'session:discard' })}
+                onConfirm={() => api.discard()}
               />
             </>
           )}
@@ -596,13 +615,41 @@ function Pins({ comments, onClick }: { comments: FeedbackComment[]; onClick: () 
   );
 }
 
+/**
+ * Page note without a save button: edits of an existing note are saved while typing; a new note is
+ * created (with screenshot) when the field loses focus or the drawer closes/switches, so nothing typed is lost.
+ */
 function NoteForm(props: {
+  initial: string;
+  exists: boolean;
   saving: boolean;
-  onSave: (text: string) => void;
-  onCancel: () => void;
+  onPersist: (text: string) => Promise<unknown>;
+  onClose: () => void;
   onEngage: () => void;
 }) {
-  const [text, setText] = useState('');
+  const [text, setText] = useState(props.initial);
+  const [dirty, setDirty] = useState(false);
+  const latest = useRef({ text, dirty, persist: props.onPersist });
+  latest.current = { text, dirty, persist: props.onPersist };
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  const flush = () => {
+    clearTimeout(timer.current);
+    if (!latest.current.dirty) return;
+    setDirty(false);
+    latest.current.dirty = false;
+    latest.current.persist(latest.current.text);
+  };
+  // Drawer closed or switched to the list: save what was typed
+  useEffect(
+    () => () => {
+      clearTimeout(timer.current);
+      if (latest.current.dirty) latest.current.persist(latest.current.text);
+    },
+    [],
+  );
+
+  const status = props.saving ? 'Speichere…' : dirty ? (props.exists ? 'Ungespeichert…' : 'Wird beim Verlassen gespeichert') : props.exists ? 'Gespeichert' : '';
   return (
     <div className="af-drawer-section">
       <div className="af-composer-title">Notiz zur Seite</div>
@@ -610,23 +657,30 @@ function NoteForm(props: {
         value={text}
         placeholder="Allgemeines Feedback zu dieser Seite…"
         onFocus={props.onEngage}
-        onChange={(e) => setText(e.target.value)}
+        onBlur={flush}
+        onChange={(e) => {
+          setText(e.target.value);
+          setDirty(true);
+          clearTimeout(timer.current);
+          // Updating an existing note needs no screenshot, so it can happen while typing
+          if (props.exists) timer.current = setTimeout(flush, 600);
+        }}
         onKeyDown={(e) => {
-          if (e.key === 'Escape') props.onCancel();
-          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && text.trim()) props.onSave(text.trim());
+          if (e.key === 'Escape' || (e.key === 'Enter' && (e.metaKey || e.ctrlKey))) {
+            e.preventDefault();
+            flush();
+            props.onClose();
+          }
         }}
       />
       <div className="af-composer-actions">
-        <span className="af-muted">⌘/Strg + Enter</span>
-        <button className="af-primary" disabled={!text.trim() || props.saving} onClick={() => props.onSave(text.trim())}>
-          {props.saving ? 'Speichere…' : 'Speichern'}
-        </button>
+        <span className="af-muted">{status}</span>
       </div>
     </div>
   );
 }
 
-function CommentList({ session, onEngage }: { session: FeedbackSession; onEngage: () => void }) {
+function CommentList({ api, session, onEngage }: { api: FeedbackHost; session: FeedbackSession; onEngage: () => void }) {
   const [editing, setEditing] = useState<string | null>(null);
   const [text, setText] = useState('');
   const path = (url: string) => {
@@ -663,7 +717,7 @@ function CommentList({ session, onEngage }: { session: FeedbackSession; onEngage
                 <button
                   className="af-primary"
                   onClick={async () => {
-                    await send({ type: 'comment:update', id: c.id, text });
+                    await api.updateComment(c.id, text);
                     setEditing(null);
                   }}
                 >
@@ -684,7 +738,7 @@ function CommentList({ session, onEngage }: { session: FeedbackSession; onEngage
                 >
                   Bearbeiten
                 </button>
-                <button className="af-danger" onClick={() => send({ type: 'comment:delete', id: c.id })}>
+                <button className="af-danger" onClick={() => api.deleteComment(c.id)}>
                   Löschen
                 </button>
               </div>

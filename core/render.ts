@@ -129,7 +129,26 @@ function renderMetadata(meta: Record<string, unknown>, indent = ''): string[] {
   return Object.entries(meta).map(([k, v]) => `${indent}- ${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`);
 }
 
-function renderComment(session: FeedbackSession, c: FeedbackComment, names: Map<string, string>): string[] {
+export interface RenderOptions {
+  /**
+   * Public URL for a screenshot path (e.g. after uploading it to a ticket). When given, screenshots are
+   * embedded as images instead of being referenced as relative files.
+   */
+  assetUrl?: (path: string) => string | undefined;
+}
+
+function renderScreenshots(c: FeedbackComment, names: Map<string, string>, opts: RenderOptions): string[] {
+  const shots = [
+    c.screenshots.crop && { path: names.get(c.screenshots.crop)!, label: 'close-up' },
+    c.screenshots.viewport && { path: names.get(c.screenshots.viewport)!, label: `viewport, marker ${c.index}` },
+  ].filter((s) => !!s);
+  if (!shots.length) return [];
+  const urls = shots.map((s) => opts.assetUrl?.(s.path));
+  if (urls.every(Boolean)) return [...shots.map((s, i) => `![${s.label}](${urls[i]})`), ''];
+  return [`**Screenshots:** ${shots.map((s) => `${code(s.path)} (${s.label})`).join(', ')}`, ''];
+}
+
+function renderComment(session: FeedbackSession, c: FeedbackComment, names: Map<string, string>, opts: RenderOptions): string[] {
   const out: string[] = [];
   out.push(`### ${c.index}. ${firstLine(c.text) || '(no text)'}`, '');
   out.push(`**Page:** ${code(pathOf(c.url))}${c.pageTitle ? ` — ${c.pageTitle}` : ''}  `);
@@ -145,11 +164,7 @@ function renderComment(session: FeedbackSession, c: FeedbackComment, names: Map<
   }
   if (c.element) out.push(...renderElement(c.element, c.kind === 'region' ? 'Element at center of area' : 'Element'), '');
 
-  const shots = [
-    c.screenshots.crop && `${code(names.get(c.screenshots.crop)!)} (close-up)`,
-    c.screenshots.viewport && `${code(names.get(c.screenshots.viewport)!)} (viewport, marker ${c.index})`,
-  ].filter(Boolean);
-  if (shots.length) out.push(`**Screenshots:** ${shots.join(', ')}`, '');
+  out.push(...renderScreenshots(c, names, opts));
 
   const prev = previousComment(session, c);
   const steps = session.timeline
@@ -174,7 +189,7 @@ function renderComment(session: FeedbackSession, c: FeedbackComment, names: Map<
   return out;
 }
 
-export function renderMarkdown(session: FeedbackSession): string {
+export function renderMarkdown(session: FeedbackSession, opts: RenderOptions = {}): string {
   const names = assetFileNames(session);
   const pages = [...new Set(session.timeline.filter((e) => e.type === 'navigate').map((e) => e.url))];
   const end = session.endedAt ?? Date.now();
@@ -209,7 +224,7 @@ export function renderMarkdown(session: FeedbackSession): string {
 
   out.push(`## Feedback (${session.comments.length} item${session.comments.length === 1 ? '' : 's'})`, '');
   if (!session.comments.length) out.push('_No comments recorded._', '');
-  for (const c of session.comments) out.push(...renderComment(session, c, names));
+  for (const c of session.comments) out.push(...renderComment(session, c, names, opts));
 
   if (session.timeline.length) {
     out.push('## Timeline', '');

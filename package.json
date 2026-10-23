@@ -12,10 +12,14 @@
     "test": "vitest run",
     "postinstall": "wxt prepare",
     "e2e": "node dev/e2e.mjs",
-    "serve": "node dev/serve.mjs"
+    "serve": "node dev/serve.mjs",
+    "build:embed": "vite build -c vite.embed.config.ts && tsc -p tsconfig.embed.json",
+    "dev:embed": "node dev/embed-dev.mjs",
+    "e2e:embed": "node dev/e2e-embed.mjs"
   },
   "dependencies": {
     "@medv/finder": "^4.0.2",
+    "modern-screenshot": "^4.7.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },
@@ -26,7 +30,25 @@
     "happy-dom": "^21.0.4",
     "playwright": "^1.64.1",
     "typescript": "^7.0.2",
+    "vite": "^8.3.5",
     "vitest": "^5.0.5",
     "wxt": "^0.21.4"
+  },
+  "exports": {
+    "./embed": {
+      "types": "./dist/embed/types/embed/index.d.ts",
+      "import": "./dist/embed/index.js"
+    },
+    "./embed/loader": {
+      "types": "./dist/embed/types/embed/loader.d.ts",
+      "import": "./dist/embed/loader.js"
+    }
+  },
+  "files": [
+    "dist/embed"
+  ],
+  "peerDependencies": {
+    "react": ">=18",
+    "react-dom": ">=18"
   }
 }

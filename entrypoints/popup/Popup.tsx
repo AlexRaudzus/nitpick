@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { browser } from 'wxt/browser';
-import { send } from '@/lib/messages';
-import type { FeedbackSession } from '@/lib/types';
-import { ConfirmButton } from '@/components/ConfirmButton';
+import { send } from '@/extension/messages';
+import type { FeedbackSession } from '@/core/types';
+import { ConfirmButton } from '@/core/ui/ConfirmButton';
 
 export function Popup() {
   const [session, setSession] = useState<FeedbackSession | null | undefined>(undefined);

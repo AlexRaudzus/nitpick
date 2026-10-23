@@ -1,8 +1,10 @@
 # Agent Feedback
 
-Browser-Extension (Chrome/Chromium, MV3) zum Sammeln von UI-Feedback für Coding-Agents:
-durch die App klicken, Elemente oder Bereiche kommentieren, am Ende einen Export erzeugen, den ein Agent abarbeiten kann.
-Website-agnostisch – nichts landet im Bundle der App.
+UI-Feedback für Coding-Agents sammeln: durch die App klicken, Elemente oder Bereiche kommentieren, am Ende einen Export erzeugen, den ein Agent abarbeiten kann.
+
+Zwei Varianten mit demselben Kern:
+- **Browser-Extension** (Chrome/Chromium, MV3) für die Entwicklung. Website-agnostisch, nichts landet im Bundle der App.
+- **Embed** für die Einbindung in eine App, z. B. Management. Kunden brauchen dann keine Extension; das Ergebnis geht direkt ins Feedback-Modal bzw. ins Ticket. Siehe [In-App-Variante](#in-app-variante-embed).
 
 ## Installation
 
@@ -22,7 +24,7 @@ Für die Entwicklung an der Extension selbst: `pnpm dev` startet einen Browser m
 3. Toolbar unten rechts:
    - **+ Kommentar** – ein einzelnes Element kommentieren (ohne Tasten halten; auch `Alt+Shift+C`)
    - **Bereich** – Rechteck aufziehen und kommentieren
-   - **Notiz** / **Liste** – öffnen sich beim Hovern über der Toolbar (Klick hält sie offen)
+   - **Notiz** / **Liste** – öffnen sich beim Hovern über der Toolbar (Klick hält sie offen). Die Notiz gilt pro Seite und speichert sich selbst.
 4. **Fertig** → **Exportieren** schreibt nach `~/Downloads/agent-feedback/<datum>_<uhrzeit>_<host>/` und legt den Ordnerpfad in die Zwischenablage.
 
 Kommentare, Timeline und Console-Errors bleiben über Navigationen, Reloads und Origin-Wechsel hinweg erhalten.
@@ -79,12 +81,60 @@ window.addEventListener('agent-feedback:request-context', (e) => {
 
 Ohne installierte Extension passiert nichts. Der Code kann also auch in Production bleiben oder nur im Dev-Build aktiv sein.
 
+## In-App-Variante (Embed)
+
+```bash
+pnpm build:embed   # → dist/embed/{index,loader}.js + Typen; React ist peer dependency
+```
+
+Einbindung, z. B. als `"agent-feedback": "link:../agent-feedback"`:
+
+```ts
+// App-Shell: winzig, ohne Abhängigkeiten
+import { hasPendingSession, loadRecorder } from 'agent-feedback/embed/loader';
+
+async function recorder() {
+  const { createFeedbackRecorder } = await loadRecorder(); // lädt Toolbar + Recorder erst bei Bedarf
+  return createFeedbackRecorder({
+    context: () => ({ userRole: user.role, tenant: tenant.slug, version: APP_VERSION }),
+    onComplete: (result) => openFeedbackModal(result), // Toolbar ist hier schon ausgeblendet
+  });
+}
+
+// "Record"-Button im Feedback-Popover (muss ein Klick sein, wegen der Tab-Freigabe)
+onRecordClick = async () => (await recorder()).start();
+
+// Nach einem Reload läuft die Session weiter
+if (hasPendingSession()) (await recorder()).restore();
+```
+
+`result` enthält:
+- `markdown` und `json`
+- `files` (`File[]`: `feedback.md`, `feedback.json`, `screenshots/NN-*.png`)
+- `session`
+- `renderMarkdown({ assetUrl })`: Markdown mit eingebetteten Bildern, z. B. nach dem Upload der Screenshots zu Linear
+
+Das Modal entscheidet dann:
+- `recorder.clear()` nach dem Erstellen des Tickets
+- `recorder.restore()` bei Abbruch, dann ist die Toolbar wieder da
+
+Unterschiede zur Extension:
+- **Screenshots** (`screenshots: 'auto' | 'tab' | 'dom'`):
+  - `auto` fragt beim Start einmal nach der Tab-Freigabe (`getDisplayMedia`, pixelgenau).
+  - Wird sie abgelehnt oder ist die Seite neu geladen, rendert es das DOM nach (modern-screenshot). Dann können Cross-Origin-Bilder, Canvas und Video fehlen.
+- **Speicher:** IndexedDB, übersteht Reloads. Mehrere Tabs synchronisieren sich über `BroadcastChannel`.
+- **Kein Origin-Wechsel:** Die Session lebt pro Origin. Login-Redirects auf eine andere Domain landen nicht in der Timeline.
+- Die Metadaten-Quellen von unten gelten auch hier. Zusätzlich gibt es die `context`-Option.
+
+Lokal ausprobieren: `pnpm dev:embed` → http://localhost:5180/settings (mit simuliertem Management-Modal).
+
 ## Entwicklung
 
 ```bash
 pnpm typecheck
 pnpm test            # Unit-Tests (Rendering, Element-Erkennung, Schwärzung)
 pnpm build && pnpm e2e   # lädt die Extension in Playwright-Chromium und spielt eine Session durch
+pnpm e2e:embed       # dieselbe Session in der In-App-Variante (Tab-Capture und DOM-Screenshots)
 pnpm serve           # Test-Seite auf http://localhost:5179/settings für manuelles Testen
 ```
 
@@ -92,11 +142,14 @@ Aufbau:
 
 | Datei | Aufgabe |
 |---|---|
-| `entrypoints/background.ts` | Session-State (`storage.local`), Screenshots, Export |
-| `entrypoints/content/` | Toolbar-UI (React im Shadow DOM), Picker, Recorder |
-| `entrypoints/page-bridge.content.ts` | läuft im Seitenkontext: Console, History, Framework-Komponenten, Metadaten |
-| `lib/render.ts` | Markdown-/JSON-Export |
-| `lib/describe-element.ts` | Selektor, Rolle, Name, XPath |
+| `core/host.ts` | `FeedbackHost`: Schnittstelle zwischen UI und Umgebung (Speicher, Screenshots, Seitenzugriff, Abschluss-Aktionen) |
+| `core/session-store.ts` | Session-Logik über einem Key-Value-Backend |
+| `core/ui/` | Toolbar, Picker, Composer (React), Recorder, Screenshot-Markierung |
+| `core/page.ts` | Code für den Seitenkontext: Console, History, Framework-Komponenten, Metadaten |
+| `core/render.ts` | Markdown-/JSON-Export |
+| `core/describe-element.ts` | Selektor, Rolle, Name, XPath |
+| `entrypoints/`, `extension/` | Extension-Shell: Service Worker (`storage.local`, `captureVisibleTab`, Downloads), Content Script, MAIN-World-Bridge |
+| `embed/` | In-App-Shell: IndexedDB, `getDisplayMedia`/DOM-Screenshots, `createFeedbackRecorder` |
 
 ## Bekannte Grenzen
 
@@ -107,5 +160,6 @@ Aufbau:
 
 ## Roadmap
 
-- v2: Video (`tabCapture`), Bridge-Snippet für das Management-Feedback-Modal (→ Linear, ein Ticket pro Session)
-- v3: MCP-Companion (`get_latest_feedback`), Linear direkt, Dev-Loader-Script ohne Extension
+- Einbindung in Management: Record-Button im Feedback-Popover, Upload der Screenshots, Linear-Ticket pro Session
+- Video: in der Extension per `tabCapture`, im Embed über den ohnehin offenen `getDisplayMedia`-Stream
+- Umzug ins qualitatio-Monorepo

@@ -1,4 +1,4 @@
-import { BRIDGE_SOURCE, CONTENT_SOURCE, type BridgeToContent, type ContentToBridge } from '@/lib/messages';
+import { BRIDGE_SOURCE, CONTENT_SOURCE, type BridgeToContent, type ContentToBridge } from '@/extension/messages';
 
 type Listener = (msg: BridgeToContent) => void;
 const listeners = new Set<Listener>();
