@@ -1,4 +1,4 @@
-import type { FeedbackComment, FeedbackSession, LogEntry, TimelineEvent } from './types';
+import type { ElementDescriptor, FeedbackComment, FeedbackSession, LogEntry, Rect, TimelineEvent } from './types';
 
 export type NewComment = Omit<FeedbackComment, 'id' | 'index' | 'timelineIndex' | 'screenshots'>;
 export type Screenshots = { viewport?: string; crop?: string };
@@ -9,11 +9,16 @@ export type PageEvent =
   | { type: 'navigate'; url: string }
   | { type: 'log'; level: 'error' | 'warn'; message: string; stack?: string };
 
+export type HostCommand = 'pick' | 'export' | 'toggle-toolbar';
+
 /** Button shown in the toolbar once the session is finished (export, hand over to ticket, …). */
 export interface FinishAction {
   label: string;
   primary?: boolean;
-  /** Returns a message shown as toast. */
+  /**
+   * Returns a message shown as toast. The first action is also bound to the export shortcut and may
+   * then run while the session is still active.
+   */
   run: () => Promise<string | void>;
 }
 
@@ -30,6 +35,8 @@ export interface FeedbackHost {
   stop(): Promise<void>;
   resume(): Promise<void>;
   discard(): Promise<void>;
+  /** Headless mode: hide the toolbar, work via shortcuts only. */
+  setHidden(hidden: boolean): Promise<void>;
 
   addComment(comment: NewComment, screenshots: Screenshots): Promise<FeedbackComment>;
   updateComment(id: string, text: string): Promise<void>;
@@ -48,6 +55,21 @@ export interface FeedbackHost {
 
   // Shell specifics
   finishActions: FinishAction[];
-  /** External trigger to pick a single element (keyboard command of the extension). */
-  onPickCommand?(cb: () => void): () => void;
+  /** External triggers, e.g. browser keyboard commands or the extension icon's context menu. */
+  onCommand?(cb: (command: HostCommand) => void): () => void;
+  /** Picking inside iframes (extension: also cross-origin). */
+  frames?: FrameBridge;
+}
+
+/** Reported by pickers running inside iframes; rects are already translated to the top viewport. */
+export type FrameEvent =
+  | { type: 'held'; held: boolean }
+  | { type: 'hover'; rect: Rect | null }
+  | { type: 'picked'; element: ElementDescriptor; rect: Rect }
+  | { type: 'shortcut'; code: string }
+  | { type: 'escape' };
+
+export interface FrameBridge {
+  setPickerActive(active: boolean): void;
+  onEvent(cb: (event: FrameEvent) => void): () => void;
 }

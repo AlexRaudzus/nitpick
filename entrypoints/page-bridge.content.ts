@@ -10,7 +10,8 @@ export default defineContentScript({
   matches: ['<all_urls>'],
   world: 'MAIN',
   runAt: 'document_start',
-  allFrames: false,
+  allFrames: true,
+  matchAboutBlank: true,
   main() {
     // The extension re-injects itself into open tabs after an update; hook the page only once.
     const w = window as unknown as { __agentFeedbackBridge?: boolean };

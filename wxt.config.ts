@@ -5,12 +5,22 @@ export default defineConfig({
   manifest: {
     name: 'Agent Feedback',
     description: 'Comment on UI elements, capture screenshots and export feedback for coding agents.',
-    permissions: ['storage', 'unlimitedStorage', 'downloads', 'tabs', 'activeTab', 'scripting', 'offscreen', 'clipboardWrite'],
+    permissions: ['storage', 'unlimitedStorage', 'downloads', 'tabs', 'activeTab', 'scripting', 'offscreen', 'clipboardWrite', 'contextMenus'],
+    // No popup: a click on the icon starts the session / shows or hides the toolbar (see background).
+    action: { default_title: 'Agent Feedback' },
     host_permissions: ['<all_urls>'],
     commands: {
+      _execute_action: {
+        suggested_key: { default: 'Alt+Shift+F' },
+        description: 'Session starten / Toolbar ein- und ausblenden',
+      },
       'toggle-picker': {
         suggested_key: { default: 'Alt+Shift+C' },
         description: 'Element kommentieren',
+      },
+      export: {
+        suggested_key: { default: 'Alt+Shift+E' },
+        description: 'Exportieren (laufende Session: danach neue Session)',
       },
     },
   },

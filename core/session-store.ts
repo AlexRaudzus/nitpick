@@ -21,6 +21,9 @@ export interface ExportBundle {
 }
 
 export const SESSION_KEY = 'session';
+/** Preferences that outlive a session (e.g. headless mode). */
+const PREFS_KEY = 'prefs';
+type Prefs = { hidden?: boolean };
 const ASSET_PREFIX = 'asset:';
 const MAX_LOGS = 500;
 const MAX_TIMELINE = 1000;
@@ -87,10 +90,12 @@ export function createSessionStore(kv: KVBackend) {
         const existing = await load();
         if (existing?.active) return existing;
         await clearAssets();
+        const prefs = ((await kv.get([PREFS_KEY]))[PREFS_KEY] as Prefs | undefined) ?? {};
         const session: FeedbackSession = {
           id: uid(),
           startedAt: Date.now(),
           active: true,
+          hidden: prefs.hidden || undefined,
           comments: [],
           timeline: [],
           logs: [],
@@ -114,6 +119,14 @@ export function createSessionStore(kv: KVBackend) {
         s.active = true;
         s.endedAt = undefined;
       }),
+
+    /** Headless mode on/off; remembered for the next sessions. */
+    async setHidden(hidden: boolean) {
+      await kv.set({ [PREFS_KEY]: { hidden } satisfies Prefs });
+      await mutate((s) => {
+        s.hidden = hidden || undefined;
+      });
+    },
 
     discard: () =>
       serialized(async () => {

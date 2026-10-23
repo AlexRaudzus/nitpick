@@ -173,3 +173,19 @@
 .af-item-actions { display: flex; gap: 6px; }
 .af-item-actions button { padding: 2px 8px; font-size: 12px; }
 .af-confirm-question { padding: 0 4px; color: #fca5a5; white-space: nowrap; }
+
+/* Shortcut overview while the hold keys are pressed */
+.af-hint.af-keys { color: var(--af-muted); white-space: nowrap; }
+.af-keys b {
+  color: var(--af-fg);
+  font-weight: 600;
+  padding: 0 4px;
+  border: 1px solid var(--af-border);
+  border-radius: 4px;
+  background: var(--af-bg-2);
+}
+.af-root button.af-icon { padding: 5px 7px; color: var(--af-muted); }
+
+/* Headless mode: the drawer opens on its own, without a toolbar giving it a width */
+.af-dock-bare .af-drawer-inner { width: 380px; min-width: 0; }
+.af-dock-bare .af-drawer-section { border-bottom: 0; }

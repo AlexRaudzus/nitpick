@@ -92,4 +92,14 @@ describe('session store', () => {
     await Promise.all(Array.from({ length: 20 }, (_, i) => store.addTimeline({ type: 'click', at: i, url, target: `b${i}` })));
     expect((await store.load())!.timeline).toHaveLength(20);
   });
+
+  it('remembers headless mode for the next session', async () => {
+    const store = createSessionStore(memoryKV());
+    await store.start();
+    await store.setHidden(true);
+    expect((await store.load())!.hidden).toBe(true);
+    await store.discard();
+    await store.start();
+    expect((await store.load())!.hidden).toBe(true);
+  });
 });

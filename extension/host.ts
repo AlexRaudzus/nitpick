@@ -1,5 +1,5 @@
 import { browser } from 'wxt/browser';
-import type { FeedbackHost } from '@/core/host';
+import type { FeedbackHost, HostCommand } from '@/core/host';
 import type { FeedbackSession } from '@/core/types';
 import { SESSION_KEY } from '@/core/session-store';
 import { send } from './messages';
@@ -20,6 +20,7 @@ export function createExtensionHost(): FeedbackHost {
     stop: async () => void (await send({ type: 'session:stop' })),
     resume: async () => void (await send({ type: 'session:resume' })),
     discard: async () => void (await send({ type: 'session:discard' })),
+    setHidden: async (hidden) => void (await send({ type: 'session:hidden', hidden })),
     addComment: (comment, screenshots) => send({ type: 'comment:add', comment, screenshots }),
     updateComment: async (id, text) => void (await send({ type: 'comment:update', id, text })),
     deleteComment: async (id) => void (await send({ type: 'comment:delete', id })),
@@ -41,7 +42,8 @@ export function createExtensionHost(): FeedbackHost {
         primary: true,
         async run() {
           const res = await send({ type: 'export:folder' });
-          return res.copied ? `Exportiert · Pfad kopiert: ${res.path}` : `${res.files} Dateien in Downloads/${res.folder} gespeichert`;
+          const where = res.copied ? `Pfad kopiert: ${res.path}` : `${res.files} Dateien in Downloads/${res.folder}`;
+          return `Exportiert · ${where}${res.restarted ? ' · neue Session läuft' : ''}`;
         },
       },
       {
@@ -53,9 +55,10 @@ export function createExtensionHost(): FeedbackHost {
       },
     ],
 
-    onPickCommand(cb) {
+    onCommand(cb) {
       const onMessage = (msg: unknown) => {
-        if ((msg as { type?: string })?.type === 'command') cb();
+        const m = msg as { type?: string; command?: HostCommand };
+        if (m?.type === 'command' && m.command) cb(m.command);
       };
       browser.runtime.onMessage.addListener(onMessage);
       return () => browser.runtime.onMessage.removeListener(onMessage);

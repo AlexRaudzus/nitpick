@@ -112,6 +112,41 @@ export function getXPath(el: Element): string {
   return `/${parts.join('/')}`;
 }
 
+/**
+ * Utility-CSS classes (Tailwind & co.) are unique by accident, change often and can't be grepped
+ * meaningfully, so they never go into a selector.
+ */
+const UTILITY_CLASS =
+  /[:/[\]!.]|^-?(p[xytrbl]?|m[xytrbl]?|w|h|size|min-[wh]|max-[wh]|z|gap(-[xy])?|space-[xy]|inset(-[xy])?|top|left|right|bottom|start|end|flex|grid|cols?|rows?|col-span|row-span|basis|grow|shrink|order|items|justify|content|self|place|text|font|leading|tracking|bg|from|via|to|border|rounded|shadow|ring|outline|divide|opacity|overflow|overscroll|object|cursor|select|pointer-events|transition|duration|delay|ease|animate|transform|translate-[xy]|scale|rotate|skew|origin|fill|stroke|line-clamp|truncate|whitespace|break|underline|no-underline|uppercase|lowercase|capitalize|italic|antialiased|sr-only|not-sr-only|block|inline|inline-block|inline-flex|inline-grid|hidden|contents|table|absolute|relative|fixed|sticky|static|visible|invisible|isolate|aspect|columns|list|decoration|align|backdrop|blur|filter|mix-blend|accent|caret|scroll|snap|touch|resize|appearance|will-change|group|peer|container|prose|dark|sm|md|lg|xl|2xl)(-|$)/;
+
+const isSemanticClass = (name: string) => !GENERATED_CLASS.test(name) && !UTILITY_CLASS.test(name);
+
+const unique = (el: Element, sel: string) => {
+  try {
+    const found = el.ownerDocument.querySelectorAll(sel);
+    return found.length === 1 && found[0] === el;
+  } catch {
+    return false;
+  }
+};
+
+/** `button[data-slot="popover-trigger"]`, `iframe[name="App"]`, `#settings-form` */
+function ownAttrSelector(el: Element): string | undefined {
+  const tag = el.tagName.toLowerCase();
+  for (const attr of STABLE_ATTRS) {
+    const v = el.getAttribute(attr);
+    if (!v || v.length > 80) continue;
+    const sel = `${tag}[${attr}="${CSS.escape(v)}"]`;
+    if (unique(el, sel)) return sel;
+  }
+  if (el.id && !/\d{3,}|^:|^radix-/.test(el.id) && unique(el, `#${CSS.escape(el.id)}`)) return `#${CSS.escape(el.id)}`;
+  return undefined;
+}
+
+/**
+ * Preference: test id → own stable attribute → short selector from semantic classes / attributes →
+ * anchored at the closest ancestor with a stable attribute → any finder result → XPath.
+ */
 export function getCssSelector(el: Element): string {
   for (const attr of TEST_ID_ATTRS) {
     const v = el.getAttribute(attr);
@@ -119,16 +154,27 @@ export function getCssSelector(el: Element): string {
     const sel = `[${attr}="${CSS.escape(v)}"]`;
     if (el.ownerDocument.querySelectorAll(sel).length === 1) return sel;
   }
+  const own = ownAttrSelector(el);
+  if (own) return own;
+
+  let found: string | undefined;
   try {
-    const selector = finder(el, {
-      className: (name) => !GENERATED_CLASS.test(name),
+    found = finder(el, {
+      root: el.ownerDocument.body ?? el.ownerDocument.documentElement,
+      idName: (name) => !/\d{3,}|^:|^radix-/.test(name),
+      className: isSemanticClass,
       attr: (name, value) => STABLE_ATTRS.includes(name) && value.length <= 80,
       timeoutMs: 500,
     });
-    return selector.length > 120 ? (anchoredSelector(el) ?? selector) : selector;
   } catch {
-    return getXPath(el);
+    // timeout or detached element
   }
+  // A short selector without positional parts is as good as it gets
+  if (found && found.length <= 80 && !found.includes('nth-')) return found;
+  const anchored = anchoredSelector(el);
+  if (anchored) return anchored;
+  if (found && found.length <= 160) return found;
+  return getXPath(el);
 }
 
 /** `a[href="/settings/horizon"] > div` instead of a 15-level nth-of-type chain. */

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { describeElement } from '../describe-element';
 import type { FeedbackHost } from '../host';
-import type { CommentKind, FeedbackComment, FeedbackSession, Rect } from '../types';
+import type { CommentKind, ElementDescriptor, FeedbackComment, FeedbackSession, Rect } from '../types';
 import { captureScreenshots } from './capture';
 import { ConfirmButton } from './ConfirmButton';
+import { HOLD_LABEL, holdPressed, SHORTCUTS, type Command } from './keys';
 import { startRecorder } from './recorder';
 
 type Mode = 'idle' | 'pick' | 'region';
@@ -11,6 +12,8 @@ type Mode = 'idle' | 'pick' | 'region';
 interface Draft {
   kind: CommentKind;
   element?: Element;
+  /** Already described elsewhere (picked inside an iframe). */
+  described?: ElementDescriptor;
   /** Viewport rect at the time of selection. */
   rect?: Rect;
 }
@@ -26,16 +29,8 @@ const samePage = (a: string, b: string) => {
   }
 };
 
-const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
-/** Hold to comment: Ctrl+Alt (Windows/Linux), ⌘+⌥ on macOS where Ctrl+click is the context menu. */
-const HOLD_LABEL = isMac ? '⌘+⌥' : 'Strg+Alt';
-function holdPressed(e: KeyboardEvent | MouseEvent): boolean {
-  // AltGr is reported as Ctrl+Alt on Windows; typing "@" or "€" must not trigger the picker.
-  if (e.getModifierState?.('AltGraph') || e.shiftKey) return false;
-  return isMac ? e.metaKey && e.altKey : e.ctrlKey && e.altKey && !e.metaKey;
-}
-
 type Drawer = 'note' | 'list' | null;
+
 
 /**
  * Toolbar, picker and composer. `host` is the shadow host element of the UI (used to tell our own
@@ -112,17 +107,39 @@ export function App({ host, api }: { host: HTMLElement; api: FeedbackHost }) {
 
   useEffect(() => startRecorder(api, () => !!sessionRef.current?.active, isOwnUi), [api, isOwnUi]);
 
-  // External trigger (keyboard command of the extension): pick one element
+  // Shortcuts: everything except picking is bound late (needs drawer/export helpers defined below).
+  const commandRef = useRef<(cmd: Command) => void>(() => undefined);
   useEffect(
     () =>
-      api.onPickCommand?.(() => {
-        if (!sessionRef.current?.active) api.start();
-        setDraft(null);
-        setRegionActive(false);
-        setOneShot((v) => !v);
+      api.onCommand?.((cmd) => {
+        if (cmd === 'pick' && !sessionRef.current?.active) api.start();
+        commandRef.current(cmd);
       }),
     [api],
   );
+  // While holding the comment keys: Ctrl+Alt+B/N/K/H/E (⌘⌥ on macOS)
+  useEffect(() => {
+    if (!session?.active) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!holdPressed(e)) return;
+      const cmd = SHORTCUTS[e.code];
+      if (!cmd) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if (!e.repeat) commandRef.current(cmd);
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [session?.active]);
+
+  // A session that was just started in headless mode shows nothing else, so say that it runs
+  // (unless a toast is already up, e.g. the export message after an export restarted the session).
+  useEffect(() => {
+    if (!session?.active || !session.hidden || session.comments.length) return;
+    if (Date.now() - session.startedAt > 3000) return;
+    setToast((t) => t ?? `Feedback-Session läuft im Hintergrund · ${HOLD_LABEL} halten zum Kommentieren`);
+    setTimeout(() => setToast((t) => (t?.startsWith('Feedback-Session läuft') ? null : t)), 3500);
+  }, [session?.id]);
 
   // Hold-to-comment
   useEffect(() => {
@@ -208,6 +225,28 @@ export function App({ host, api }: { host: HTMLElement; api: FeedbackHost }) {
     };
   }, [mode, isOwnUi, host]);
 
+  // Pickers inside iframes: tell them when picking is on, take over their hover/pick/keys
+  useEffect(() => api.frames?.setPickerActive(mode === 'pick'), [api, mode]);
+  useEffect(
+    () =>
+      api.frames?.onEvent((e) => {
+        if (e.type === 'held') setHeld(e.held);
+        else if (e.type === 'shortcut') {
+          const cmd = SHORTCUTS[e.code];
+          if (cmd && sessionRef.current?.active) commandRef.current(cmd);
+        } else if (e.type === 'escape') setOneShot(false);
+        else if (e.type === 'hover') {
+          hoverEl.current = null;
+          setHover(e.rect);
+        } else if (e.type === 'picked') {
+          setOneShot(false);
+          setHeld(false);
+          setDraft({ kind: 'element', described: e.element, rect: e.rect });
+        }
+      }),
+    [api],
+  );
+
   const lastPointer = useRef<{ x: number; y: number } | null>(null);
   useEffect(() => {
     const track = (e: MouseEvent) => (lastPointer.current = { x: e.clientX, y: e.clientY });
@@ -242,12 +281,51 @@ export function App({ host, api }: { host: HTMLElement; api: FeedbackHost }) {
   // ---- Saving ---------------------------------------------------------------
   const [saving, setSaving] = useState(false);
   const saveComment = async (d: Draft, text: string): Promise<FeedbackComment | null> => {
-    if (!session) return null;
+    commandRef.current = (cmd) => {
+    const s = sessionRef.current;
+    if (!s) return;
+    switch (cmd) {
+      case 'pick':
+        setDraft(null);
+        setRegionActive(false);
+        setOneShot((v) => !v);
+        return;
+      case 'region':
+        setDraft(null);
+        setOneShot(false);
+        setRegionActive((v) => !v);
+        return;
+      case 'note':
+      case 'list':
+        if (drawer === cmd && drawerPinned) closeDrawer();
+        else {
+          clearTimeout(hoverTimer.current);
+          setDrawer(cmd);
+          setDrawerPinned(true);
+        }
+        return;
+      case 'toggle-toolbar':
+        api.setHidden(!s.hidden);
+        return;
+      case 'export': {
+        const primary = api.finishActions[0];
+        if (!s.comments.length) notify('Noch keine Kommentare zum Exportieren');
+        else if (primary) runAction(primary.run);
+        return;
+      }
+    }
+  };
+
+  if (!session) return null;
+  // Headless mode only applies while recording; a finished session always shows its actions.
+  const hidden = session.active && !!session.hidden;
     setSaving(true);
     try {
       let element = undefined;
       let rect = d.rect;
-      if (d.element?.isConnected) {
+      if (d.described) {
+        element = d.described;
+      } else if (d.element?.isConnected) {
         element = { ...describeElement(d.element), ...(await api.probeComponents(d.element)) };
         rect = element.viewportRect;
       } else if (d.kind === 'region' && rect) {
@@ -281,6 +359,7 @@ export function App({ host, api }: { host: HTMLElement; api: FeedbackHost }) {
         },
         screenshots,
       );
+      if (sessionRef.current?.hidden) notify(`Kommentar ${created.index} gespeichert`);
       // Show it right away; the authoritative state follows via subscribe
       const s = sessionRef.current;
       if (s && !s.comments.some((c) => c.id === created.id)) {
@@ -324,7 +403,44 @@ export function App({ host, api }: { host: HTMLElement; api: FeedbackHost }) {
     }
   };
 
+  commandRef.current = (cmd) => {
+    const s = sessionRef.current;
+    if (!s) return;
+    switch (cmd) {
+      case 'pick':
+        setDraft(null);
+        setRegionActive(false);
+        setOneShot((v) => !v);
+        return;
+      case 'region':
+        setDraft(null);
+        setOneShot(false);
+        setRegionActive((v) => !v);
+        return;
+      case 'note':
+      case 'list':
+        if (drawer === cmd && drawerPinned) closeDrawer();
+        else {
+          clearTimeout(hoverTimer.current);
+          setDrawer(cmd);
+          setDrawerPinned(true);
+        }
+        return;
+      case 'toggle-toolbar':
+        api.setHidden(!s.hidden);
+        return;
+      case 'export': {
+        const primary = api.finishActions[0];
+        if (!s.comments.length) notify('Noch keine Kommentare zum Exportieren');
+        else if (primary) runAction(primary.run);
+        return;
+      }
+    }
+  };
+
   if (!session) return null;
+  // Headless mode only applies while recording; a finished session always shows its actions.
+  const hidden = session.active && !!session.hidden;
 
   const commentsHere = session.comments.filter((c) => samePage(c.url, location.href));
   const listButton = (
@@ -349,7 +465,7 @@ export function App({ host, api }: { host: HTMLElement; api: FeedbackHost }) {
           }}
         />
       )}
-      {!draft && (
+      {!draft && (!hidden || held) && (
         <Pins
           comments={commentsHere}
           onClick={() => {
@@ -373,8 +489,8 @@ export function App({ host, api }: { host: HTMLElement; api: FeedbackHost }) {
         </>
       )}
 
-      <div
-        className="af-dock"
+      {(!hidden || (drawer && drawerPinned)) && <div
+        className={`af-dock${hidden ? ' af-dock-bare' : ''}`}
         onMouseEnter={() => clearTimeout(hoverTimer.current)}
         onMouseLeave={() => !drawerPinned && hoverDrawer(null, 350)}
       >
@@ -387,6 +503,7 @@ export function App({ host, api }: { host: HTMLElement; api: FeedbackHost }) {
                 exists={!!pageNote()}
                 saving={saving}
                 onEngage={() => setDrawerPinned(true)}
+                autoFocus={drawerPinned}
                 onClose={closeDrawer}
                 onPersist={persistNote}
               />
@@ -395,7 +512,7 @@ export function App({ host, api }: { host: HTMLElement; api: FeedbackHost }) {
           </div>
         </div>
 
-        <div className="af-toolbar">
+        {!hidden && <div className="af-toolbar">
           {session.active ? (
             <>
               <span className="af-rec" title="Session läuft">
@@ -436,6 +553,9 @@ export function App({ host, api }: { host: HTMLElement; api: FeedbackHost }) {
               <button className="af-primary" onClick={() => api.stop()}>
                 Fertig
               </button>
+              <button className="af-icon" title={`Toolbar ausblenden – alles per Tastenkürzel (${HOLD_LABEL}+H)`} onClick={() => api.setHidden(true)}>
+                ⌄
+              </button>
             </>
           ) : (
             <>
@@ -455,8 +575,14 @@ export function App({ host, api }: { host: HTMLElement; api: FeedbackHost }) {
               />
             </>
           )}
+        </div>}
+      </div>}
+      {held && !oneShot && !draft && mode !== 'region' && (
+        <div className="af-hint af-keys">
+          <b>Klick</b> Element · <b>↑</b> Eltern · <b>B</b> Bereich · <b>N</b> Notiz · <b>K</b> Liste · <b>E</b> Export ·{' '}
+          <b>H</b> Toolbar {hidden ? 'zeigen' : 'ausblenden'}
         </div>
-      </div>
+      )}
       {mode === 'region' && <div className="af-hint">Bereich aufziehen · Esc abbrechen</div>}
       {oneShot && mode === 'pick' && <div className="af-hint">Element anklicken · ↑ Elternelement · Esc abbrechen</div>}
       {toast && <div className="af-toast">{toast}</div>}
@@ -582,7 +708,8 @@ function Pins({ comments, onClick }: { comments: FeedbackComment[]; onClick: () 
         if (c.element) {
           let el: Element | null = null;
           try {
-            el = document.querySelector(c.element.selector);
+            // Selectors of elements inside iframes are relative to the frame's document
+            if (!c.element.frames) el = document.querySelector(c.element.selector);
           } catch {
             // selector may be an xpath fallback
           }
@@ -621,6 +748,7 @@ function Pins({ comments, onClick }: { comments: FeedbackComment[]; onClick: () 
  */
 function NoteForm(props: {
   initial: string;
+  autoFocus?: boolean;
   exists: boolean;
   saving: boolean;
   onPersist: (text: string) => Promise<unknown>;
@@ -654,6 +782,7 @@ function NoteForm(props: {
     <div className="af-drawer-section">
       <div className="af-composer-title">Notiz zur Seite</div>
       <textarea
+        autoFocus={props.autoFocus}
         value={text}
         placeholder="Allgemeines Feedback zu dieser Seite…"
         onFocus={props.onEngage}

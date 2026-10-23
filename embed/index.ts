@@ -124,6 +124,7 @@ export function createFeedbackRecorder(options: RecorderOptions) {
       shots.stop();
       unmount();
     },
+    setHidden: (hidden) => store.setHidden(hidden),
     addComment: (c, s) => store.addComment(c, s),
     updateComment: (id, text) => store.updateComment(id, text),
     deleteComment: (id) => store.deleteComment(id),

@@ -91,6 +91,10 @@ function renderElement(el: ElementDescriptor, label = 'Element'): string[] {
   if (el.testId) lines.push(`- test id: ${code(el.testId)}`);
   if (el.id) lines.push(`- id: ${code(el.id)}`);
   if (el.slot) lines.push(`- data-slot: ${code(el.slot)}`);
+  if (el.frames?.length) {
+    const chain = el.frames.map((f) => `${code(f.selector)} (${f.url})`).join(' › ');
+    lines.push(`- in iframe: ${chain} — selector/inside below are relative to that frame's document`);
+  }
   if (el.within?.length) lines.push(`- inside: ${[...el.within].reverse().join(' › ')}`);
   if (el.components?.length) lines.push(`- component: ${code(el.components.join(' › '))}`);
   else if (el.minified) lines.push('- component: _unknown (production build with minified names)_');
@@ -230,7 +234,8 @@ export function renderMarkdown(session: FeedbackSession, opts: RenderOptions = {
     out.push('## Timeline', '');
     let lastOrigin = '';
     session.timeline.forEach((e, i) => {
-      const origin = hostOf(e.url);
+      // Events inside iframes don't change the page the user is on
+      const origin = 'frame' in e && e.frame ? lastOrigin : hostOf(e.url);
       const originNote = origin && origin !== lastOrigin && lastOrigin ? ` _(now on ${origin})_` : '';
       lastOrigin = origin || lastOrigin;
       out.push(`${i + 1}. ${formatTime(e.at)} ${describeTimelineEvent(e)}${originNote}`);

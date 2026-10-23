@@ -57,4 +57,21 @@ describe('getContext', () => {
     expect(document.querySelector(sel)).toBe(target);
     expect(sel.length).toBeLessThanOrEqual(120);
   });
+
+  it('never builds selectors from utility classes', async () => {
+    const { getCssSelector } = await import('@/core/describe-element');
+    document.body.innerHTML = `
+      <aside class="flex w-64 border-r">
+        <button data-slot="popover-trigger" class="z-100 peer/menu-button flex w-full items-center gap-2">Workspace</button>
+        <button data-slot="sidebar-item" class="flex">A</button>
+        <button data-slot="sidebar-item" class="flex">B</button>
+      </aside>
+      <main><iframe name="App" class="h-full w-full border-0"></iframe><div class="settings-card p-4">x</div></main>`;
+    expect(getCssSelector(document.querySelector('[data-slot=popover-trigger]')!)).toBe('button[data-slot="popover-trigger"]');
+    expect(getCssSelector(document.querySelector('iframe')!)).toBe('iframe[name="App"]');
+    expect(getCssSelector(document.querySelector('.settings-card')!)).toBe('.settings-card');
+    const b = getCssSelector(document.querySelectorAll('[data-slot=sidebar-item]')[1]!);
+    expect(document.querySelector(b)).toBe(document.querySelectorAll('[data-slot=sidebar-item]')[1]);
+    expect(b).not.toMatch(/\.(flex|w-|z-|gap)/);
+  });
 });

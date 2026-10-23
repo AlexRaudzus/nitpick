@@ -19,13 +19,45 @@ Für die Entwicklung an der Extension selbst: `pnpm dev` startet einen Browser m
 
 ## Nutzung
 
-1. Extension-Icon → **Session starten**.
-2. Ganz normal durch die App klicken. Zum Kommentieren **`Strg+Alt` gedrückt halten** (macOS: `⌘+⌥`) und ein Element anklicken. Beim Loslassen ist wieder normales Navigieren aktiv. Während des Haltens wählt `↑` das Elternelement.
+1. **Klick aufs Extension-Icon** (oder `Alt+Shift+F`) startet eine Session. Bei einer laufenden Session blendet derselbe Klick die Toolbar ein oder aus, eine beendete setzt er fort. Das Badge am Icon zeigt die Anzahl der Kommentare.
+2. Ganz normal durch die App klicken. Zum Kommentieren **`Strg+Alt` gedrückt halten** (macOS: `⌘+⌥`) und ein Element anklicken. Beim Loslassen ist wieder normales Navigieren aktiv. Solange die Tasten gedrückt sind, zeigt eine Leiste oben alle Kürzel.
 3. Toolbar unten rechts:
    - **+ Kommentar** – ein einzelnes Element kommentieren (ohne Tasten halten; auch `Alt+Shift+C`)
    - **Bereich** – Rechteck aufziehen und kommentieren
    - **Notiz** / **Liste** – öffnen sich beim Hovern über der Toolbar (Klick hält sie offen). Die Notiz gilt pro Seite und speichert sich selbst.
+   - **⌄** – Toolbar ausblenden (Headless-Modus)
 4. **Fertig** → **Exportieren** schreibt nach `~/Downloads/agent-feedback/<datum>_<uhrzeit>_<host>/` und legt den Ordnerpfad in die Zwischenablage.
+
+Rechtsklick aufs Icon: Exportieren, Toolbar ein-/ausblenden, Tastenkürzel anpassen.
+
+### Tastenkürzel
+
+| Kürzel | Aktion |
+|---|---|
+| `Strg+Alt` halten + Klick | Element kommentieren (`↑` = Elternelement) |
+| `Strg+Alt+B` | Bereich markieren |
+| `Strg+Alt+N` | Notiz zur Seite |
+| `Strg+Alt+K` | Kommentarliste |
+| `Strg+Alt+H` | Toolbar ein-/ausblenden |
+| `Strg+Alt+E` | Exportieren |
+| `Alt+Shift+F` | wie Klick aufs Icon (auch ohne Fokus auf der Seite) |
+| `Alt+Shift+C` | ein Element kommentieren |
+| `Alt+Shift+E` | Exportieren |
+
+Die `Alt+Shift`-Kürzel sind Browser-Kürzel und unter `chrome://extensions/shortcuts` änderbar. Die `Strg+Alt`-Kürzel gelten nur auf der Seite.
+
+### Headless-Modus
+
+Mit `Strg+Alt+H` (oder Icon-Klick) verschwindet die Toolbar.
+- Die Session läuft weiter.
+- Marker und die Kürzel-Leiste erscheinen nur, solange `Strg+Alt` gedrückt ist.
+- Nach jedem Kommentar kommt eine kurze Bestätigung.
+- Der Modus bleibt für spätere Sessions erhalten.
+
+**Exportieren während einer laufenden Session** (`Strg+Alt+E`):
+- Der Ordner wird geschrieben und der Pfad kopiert.
+- Danach startet sofort eine neue, leere Session.
+- So bleibt die Extension dauerhaft scharf: kommentieren, exportieren, dem Agent geben, weiter kommentieren.
 
 Kommentare, Timeline und Console-Errors bleiben über Navigationen, Reloads und Origin-Wechsel hinweg erhalten.
 
@@ -42,7 +74,7 @@ agent-feedback/2026-10-23_14-02_localhost_3000/
 
 Pro Kommentar enthält `feedback.md`:
 - Seite
-- Element-Identifikatoren: Test-ID, Komponentenkette (React/Vue/Svelte in Dev-Builds), CSS-Selektor, Accessible Name, Position
+- Element-Identifikatoren: Test-ID, Komponentenkette (React/Vue/Svelte in Dev-Builds), CSS-Selektor, Accessible Name, Position. Der Selektor bevorzugt stabile Attribute (`data-slot`, `name`, `aria-label` …), Utility-Klassen wie Tailwind verwendet er nie.
 - Screenshots
 - die Schritte seit dem letzten Kommentar
 - Console-Errors kurz davor
@@ -155,7 +187,7 @@ Aufbau:
 
 - Screenshots zeigen nur den sichtbaren Viewport. Das Element sollte beim Kommentieren also sichtbar sein.
 - Modale mit hartem Focus-Trap (z. B. Radix Dialog) können dem Kommentarfeld den Fokus wegnehmen.
-- Elemente in Cross-Origin-iframes lassen sich nicht auswählen.
+- iframes: In der Extension lassen sich Elemente in iframes auswählen, auch über Domaingrenzen hinweg. Der Export nennt dann das iframe, und der Selektor bezieht sich auf das Dokument im iframe. Bereichskommentare und Marker sehen nicht ins iframe hinein. Im Embed funktioniert die Auswahl in iframes noch nicht.
 - React 19 liefert keine Source-Location mehr, daher nur Komponentennamen. Vue und Svelte liefern in Dev-Builds die Datei.
 
 ## Roadmap

@@ -9,6 +9,7 @@ export type Request =
   | { type: 'session:stop' }
   | { type: 'session:resume' }
   | { type: 'session:discard' }
+  | { type: 'session:hidden'; hidden: boolean }
   | { type: 'capture:viewport' }
   | {
       type: 'comment:add';
@@ -30,6 +31,7 @@ export interface ResponseMap {
   'session:stop': FeedbackSession | null;
   'session:resume': FeedbackSession | null;
   'session:discard': null;
+  'session:hidden': null;
   'capture:viewport': string;
   'comment:add': FeedbackComment;
   'comment:update': null;
@@ -37,7 +39,7 @@ export interface ResponseMap {
   'timeline:add': null;
   'log:add': null;
   'metadata:set': null;
-  'export:folder': { folder: string; path?: string; files: number; copied: boolean };
+  'export:folder': { folder: string; path?: string; files: number; copied: boolean; restarted: boolean };
   'clipboard:copy': boolean;
   'export:markdown': string;
 }

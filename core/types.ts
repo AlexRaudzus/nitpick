@@ -30,6 +30,18 @@ export interface ElementDescriptor {
   sourceFile?: string;
   /** Component names looked minified (production build), so `components` was omitted. */
   minified?: boolean;
+  /**
+   * The element lives in an iframe (outermost first). `selector`, `xpath` and `within` are then relative
+   * to the innermost frame's document; the rects are translated to the top page.
+   */
+  frames?: FrameInfo[];
+}
+
+export interface FrameInfo {
+  /** Selector of the <iframe> element in its parent document. */
+  selector: string;
+  /** URL loaded in the frame. */
+  url: string;
 }
 
 export type CommentKind = 'element' | 'region' | 'note';
@@ -53,11 +65,12 @@ export interface FeedbackComment {
   viewport: { width: number; height: number; dpr: number; scrollX: number; scrollY: number };
 }
 
+/** `frame`: happened inside an iframe, `url` is then the frame's URL. */
 export type TimelineEvent =
   | { type: 'navigate'; at: number; url: string; title?: string }
-  | { type: 'click'; at: number; url: string; target: string }
-  | { type: 'input'; at: number; url: string; target: string; value: string }
-  | { type: 'submit'; at: number; url: string; target: string }
+  | { type: 'click'; at: number; url: string; target: string; frame?: boolean }
+  | { type: 'input'; at: number; url: string; target: string; value: string; frame?: boolean }
+  | { type: 'submit'; at: number; url: string; target: string; frame?: boolean }
   | { type: 'comment'; at: number; url: string; commentId: string; commentIndex: number };
 
 export interface LogEntry {
@@ -73,6 +86,8 @@ export interface FeedbackSession {
   startedAt: number;
   endedAt?: number;
   active: boolean;
+  /** Headless mode: toolbar hidden, everything via shortcuts. */
+  hidden?: boolean;
   comments: FeedbackComment[];
   timeline: TimelineEvent[];
   logs: LogEntry[];

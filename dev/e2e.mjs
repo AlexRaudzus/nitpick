@@ -30,12 +30,13 @@ try {
   await page.goto('http://localhost:5179/settings');
   await page.waitForTimeout(500);
 
-  // Start a session the way the popup does
-  const popup = await ctx.newPage();
-  await popup.goto(`chrome-extension://${extId}/popup.html`);
-  await popup.getByRole('button', { name: 'Session starten' }).click();
-  await popup.close().catch(() => undefined);
-  await page.bringToFront();
+  // Start a session like a click on the toolbar icon does
+  const clickIcon = () =>
+    sw.evaluate(async () => {
+      const [tab] = await chrome.tabs.query({ url: 'http://localhost:5179/*' });
+      await globalThis.__agentFeedback.onActionClicked(tab);
+    });
+  await clickIcon();
 
   const toolbar = page.locator('agent-feedback-ui .af-toolbar');
   await toolbar.waitFor({ timeout: 5000 }).catch(async (err) => {
@@ -105,13 +106,31 @@ try {
   await page.waitForTimeout(500);
 
   await page.screenshot({ path: join(out, 'page-with-pins.png') });
+  // 3b) Element inside a cross-origin iframe, picked by holding Ctrl+Alt
+  const frameBtn = page.frameLocator('iframe[name=Embedded]').locator('[data-slot=frame-action]');
+  await frameBtn.click(); // normal click: recorded in the timeline, logs an error inside the frame
+  await page.locator('h1').hover();
+  await page.keyboard.down('Control');
+  await page.keyboard.down('Alt');
+  await frameBtn.hover({ modifiers: ['Control', 'Alt'] });
+  await page.waitForTimeout(200);
+  await frameBtn.click({ modifiers: ['Control', 'Alt'] });
+  await page.keyboard.up('Alt');
+  await page.keyboard.up('Control');
+  await composer.fill('Button im iframe zu klein');
+  await page.screenshot({ path: join(out, 'iframe-composer.png') });
+  await composer.press('Control+Enter');
+  await page.waitForFunction(() =>
+    document.querySelector('agent-feedback-ui')?.shadowRoot?.querySelector('.af-rec')?.textContent?.includes('4'),
+  );
+
   // 4) One-shot pick via "+ Kommentar" ends after one element
   await toolbar.getByRole('button', { name: '+ Kommentar' }).click();
   await page.click('h1');
   await composer.fill('Überschrift zu groß');
   await composer.press('Control+Enter');
   await page.waitForFunction(() =>
-    document.querySelector('agent-feedback-ui')?.shadowRoot?.querySelector('.af-rec')?.textContent?.includes('4'),
+    document.querySelector('agent-feedback-ui')?.shadowRoot?.querySelector('.af-rec')?.textContent?.includes('5'),
   );
   await page.click('text=Einstellungen');
   await page.waitForURL('**/settings');
@@ -126,7 +145,7 @@ try {
 
   // Read results through an extension page
   const ext = await ctx.newPage();
-  await ext.goto(`chrome-extension://${extId}/popup.html`);
+  await ext.goto(`chrome-extension://${extId}/offscreen.html`);
   const result = await ext.evaluate(async () => {
     const md = await chrome.runtime.sendMessage({ type: 'export:markdown' });
     const exp = await chrome.runtime.sendMessage({ type: 'export:folder' });
@@ -157,9 +176,14 @@ try {
     ['region comment', 'Marked area (viewport)'],
     ['note', 'Seite lädt insgesamt langsam'],
     ['one-shot comment', 'Überschrift zu groß'],
+    ['iframe element', 'in iframe: `iframe[name="Embedded"]` (http://127.0.0.1:5179/frame)'],
+    ['iframe selector', 'selector: `button[data-slot="frame-action"]`'],
+    ['iframe click in timeline', 'click button "Im Frame speichern" (in iframe)'],
+    ['iframe console error', 'Frame failed to save'],
   ];
   for (const [name, needle] of checks) if (!md.includes(needle)) fail(`${name}: missing "${needle}"`);
   if (md.includes('super-secret')) fail('password leaked');
+  if (md.includes('now on 127.0.0.1')) fail('iframe event treated as origin change');
   if (/click (div|main|html)\b/.test(md)) fail('noise click recorded');
   const ownUiOnTop = await page.evaluate(() => {
     const r = document.querySelector('agent-feedback-ui').shadowRoot.querySelector('.af-toolbar').getBoundingClientRect();
@@ -169,7 +193,53 @@ try {
   if (!result.exp.ok) fail(`export failed: ${result.exp.error}`);
   else console.log(`  export path: ${result.exp.data.path} (copied: ${result.exp.data.copied})`);
   if (result.exp.ok && !result.exp.data.copied) fail('export path not copied to clipboard');
-  if (Object.keys(result.assets).length !== 7) fail(`expected 7 screenshots, got ${Object.keys(result.assets).length}`);
+  if (Object.keys(result.assets).length !== 9) fail(`expected 9 screenshots, got ${Object.keys(result.assets).length}`);
+  // Headless mode: icon starts a fresh session, Ctrl+Alt+H hides the toolbar, Ctrl+Alt+E exports and restarts
+  const stored = () => sw.evaluate(async () => (await chrome.storage.local.get('session')).session);
+  await sw.evaluate(() => chrome.storage.local.remove('session'));
+  await page.waitForFunction(() => !document.querySelector('agent-feedback-ui')?.shadowRoot?.querySelector('.af-toolbar'));
+  await clickIcon();
+  await toolbar.waitFor({ timeout: 5000 });
+  const badge = await sw.evaluate(() => chrome.action.getBadgeText({}));
+  if (badge !== '0') fail(`badge "${badge}" instead of "0"`);
+  await page.keyboard.down('Control');
+  await page.keyboard.down('Alt');
+  await page.locator('agent-feedback-ui .af-keys').waitFor({ timeout: 2000 });
+  await page.screenshot({ path: join(out, 'shortcut-hint.png') });
+  await page.keyboard.press('KeyH');
+  await toolbar.waitFor({ state: 'detached', timeout: 2000 });
+  await page.click('h1', { modifiers: ['Control', 'Alt'] });
+  await page.keyboard.up('Alt');
+  await page.keyboard.up('Control');
+  await composer.fill('Headless-Kommentar');
+  await composer.press('Control+Enter');
+  const toast = page.locator('agent-feedback-ui .af-toast');
+  await toast.filter({ hasText: 'Kommentar 1 gespeichert' }).waitFor({ timeout: 5000 });
+  await page.screenshot({ path: join(out, 'headless.png') });
+  // Ctrl+Alt+N opens the page note without a toolbar; typing goes straight into it
+  await page.keyboard.down('Control');
+  await page.keyboard.down('Alt');
+  await page.keyboard.press('KeyN');
+  await page.keyboard.up('Alt');
+  await page.keyboard.up('Control');
+  await note.waitFor({ timeout: 2000 });
+  await page.keyboard.type('Headless-Notiz');
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: join(out, 'headless-note.png') });
+  await page.keyboard.press('Escape');
+  await toast.filter({ hasText: 'Kommentar 2 gespeichert' }).waitFor({ timeout: 5000 });
+  await page.keyboard.down('Control');
+  await page.keyboard.down('Alt');
+  await page.keyboard.press('KeyE');
+  await page.keyboard.up('Alt');
+  await page.keyboard.up('Control');
+  await toast.filter({ hasText: 'neue Session läuft' }).waitFor({ timeout: 10000 });
+  const fresh = await stored();
+  if (!fresh?.active || fresh.comments.length || !fresh.hidden) fail(`no fresh hidden session after export: ${JSON.stringify(fresh)?.slice(0, 200)}`);
+  // icon click on a running hidden session shows the toolbar again
+  await clickIcon();
+  await toolbar.waitFor({ timeout: 2000 });
+
   if (!process.exitCode) console.log(`✓ e2e passed – ${result.exp.data.files} files exported, artifacts in test-results/`);
 } catch (err) {
   fail(err.stack ?? String(err));
