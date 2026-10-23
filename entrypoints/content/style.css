@@ -1,0 +1,175 @@
+/* px units only: rem would scale with the host page's font-size */
+:host {
+  --af-accent: #ff3b6b;
+  --af-bg: #18181b;
+  --af-bg-2: #27272a;
+  --af-fg: #fafafa;
+  --af-muted: #a1a1aa;
+  --af-border: #3f3f46;
+}
+
+/* The root is a full-viewport popover in the top layer; it lets clicks through except on our widgets. */
+.af-root {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647; /* fallback when the popover API is unavailable */
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  overflow: visible;
+  pointer-events: none;
+  font: 13px/1.4 system-ui, -apple-system, 'Segoe UI', sans-serif;
+  color: var(--af-fg);
+}
+.af-root::backdrop { display: none; }
+.af-dock, .af-composer, .af-pin, .af-toast, .af-region-layer { pointer-events: auto; }
+
+.af-root button {
+  font: inherit;
+  color: var(--af-fg);
+  background: var(--af-bg-2);
+  border: 1px solid var(--af-border);
+  border-radius: 7px;
+  padding: 5px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.af-root button:hover { background: #3f3f46; }
+.af-root button:disabled { opacity: 0.5; cursor: default; }
+.af-root button.af-on { background: var(--af-accent); border-color: var(--af-accent); }
+.af-root button.af-on-soft { background: #3f3f46; }
+.af-root button.af-primary { background: var(--af-accent); border-color: var(--af-accent); font-weight: 600; }
+.af-root button.af-danger { color: #fca5a5; }
+
+/* Toolbar + drawer form one surface that grows upwards */
+.af-dock {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  background: var(--af-bg);
+  border: 1px solid var(--af-border);
+  border-radius: 12px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+.af-drawer {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.af-drawer.af-open { grid-template-rows: 1fr; }
+/* width: 0 + min-width: 100% → the drawer never makes the dock wider than the toolbar */
+.af-drawer-inner { min-height: 0; width: 0; min-width: 100%; overflow: hidden; }
+.af-drawer-section {
+  padding: 12px 12px 10px;
+  border-bottom: 1px solid var(--af-border);
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 180ms ease 60ms, transform 220ms ease;
+}
+.af-open .af-drawer-section { opacity: 1; transform: none; }
+.af-list { max-height: min(50vh, 460px); overflow-y: auto; padding-top: 4px; }
+.af-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+}
+.af-sep { width: 1px; align-self: stretch; background: var(--af-border); margin: 2px 2px; }
+.af-label { padding: 0 6px; color: var(--af-muted); }
+.af-rec { display: inline-flex; align-items: center; gap: 6px; padding: 0 8px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.af-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--af-accent); animation: af-pulse 1.6s infinite; }
+@keyframes af-pulse { 50% { opacity: 0.35; } }
+
+.af-hint, .af-toast {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 7px 12px;
+  background: var(--af-bg);
+  border: 1px solid var(--af-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+}
+.af-hint { top: 16px; pointer-events: none; }
+.af-toast { bottom: 76px; }
+
+.af-highlight {
+  position: fixed;
+  pointer-events: none;
+  outline: 2px solid var(--af-accent);
+  background: rgba(255, 59, 107, 0.08);
+  border-radius: 2px;
+}
+.af-selected { outline-style: solid; background: rgba(255, 59, 107, 0.14); }
+
+.af-region-layer { position: fixed; inset: 0; cursor: crosshair; background: rgba(0, 0, 0, 0.08); }
+
+.af-composer {
+  position: fixed;
+  width: 320px;
+  padding: 10px;
+  background: var(--af-bg);
+  border: 1px solid var(--af-border);
+  border-radius: 11px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+}
+.af-composer-title { font-weight: 600; margin-bottom: 6px; }
+.af-root textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 80px;
+  resize: vertical;
+  font: inherit;
+  color: var(--af-fg);
+  background: var(--af-bg-2);
+  border: 1px solid var(--af-border);
+  border-radius: 7px;
+  padding: 7px 8px;
+  outline: none;
+}
+.af-root textarea:focus { border-color: var(--af-accent); }
+.af-composer-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; margin-top: 8px; }
+.af-composer-actions .af-muted { margin-right: auto; font-size: 11px; }
+.af-muted { color: var(--af-muted); }
+
+.af-pin {
+  position: fixed;
+  width: 22px;
+  height: 22px;
+  padding: 0 !important;
+  border-radius: 50% !important;
+  background: var(--af-accent) !important;
+  border: 2px solid #fff !important;
+  font-size: 11px !important;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+.af-item { padding: 8px 0; border-bottom: 1px solid var(--af-border); }
+.af-item:last-child { border-bottom: none; }
+.af-item-head { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.af-item-head .af-muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.af-badge {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--af-accent);
+  font-size: 11px;
+  font-weight: 700;
+}
+.af-item-text { margin: 6px 0; white-space: pre-wrap; }
+.af-item-actions { display: flex; gap: 6px; }
+.af-item-actions button { padding: 2px 8px; font-size: 12px; }
+.af-confirm-question { padding: 0 4px; color: #fca5a5; white-space: nowrap; }

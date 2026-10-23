@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="agent-feedback:version" content="2.4.1" />
+    <meta name="agent-feedback:commit" content="a1b2c3d" />
+    <title>Test App – Einstellungen</title>
+    <style>
+      body { font: 15px system-ui, sans-serif; margin: 0; background: #f4f4f5; color: #18181b; }
+      header { background: #18181b; color: #fff; padding: 14px 24px; display: flex; gap: 18px; align-items: center; }
+      header a { color: #e4e4e7; }
+      main { max-width: 720px; margin: 32px auto; background: #fff; padding: 24px 28px; border-radius: 12px; }
+      label { display: block; margin: 14px 0 4px; font-weight: 600; }
+      input { padding: 8px 10px; width: 280px; border: 1px solid #d4d4d8; border-radius: 6px; }
+      .actions { margin-top: 22px; display: flex; gap: 10px; }
+      button { padding: 8px 14px; border-radius: 6px; border: 1px solid #d4d4d8; background: #fff; }
+      .btn-primary { background: #2563eb; color: #fff; border-color: #2563eb; }
+      .card { margin-top: 28px; padding: 16px; border: 1px dashed #a1a1aa; border-radius: 8px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <strong>Test App</strong>
+      <a href="/settings" data-nav>Einstellungen</a>
+      <a href="/users" data-nav>Benutzer</a>
+    </header>
+    <main>
+      <h1 id="title">Einstellungen</h1>
+      <form class="settings" onsubmit="event.preventDefault()">
+        <label for="name">Firmenname</label>
+        <input id="name" name="company" />
+        <label for="pw">Passwort</label>
+        <input id="pw" type="password" name="password" />
+        <div class="actions">
+          <button type="submit" class="btn-primary" data-testid="settings-save">Submit</button>
+          <button type="button" id="broken">Kaputter Button</button>
+        </div>
+      </form>
+      <div class="card">Statistik-Karte mit falschem Abstand</div>
+    </main>
+    <!-- Aggressive overlay like chat widgets / toasts: must not cover the feedback toolbar -->
+    <div id="overlay" style="position: fixed; right: 0; bottom: 0; width: 520px; height: 140px; z-index: 2147483647; background: rgba(37, 99, 235, 0.15)">
+      z-index-Overlay
+    </div>
+    <script>
+      // Page-provided context: function form …
+      window.__AGENT_FEEDBACK__ = () => ({ userRole: 'admin', tenant: 'acme' });
+      // … and event form
+      window.addEventListener('agent-feedback:request-context', (e) => e.detail.respond({ featureFlags: ['newSettings'] }));
+
+      // Fake a React fiber so component detection can be tested without bundling React
+      const btn = document.querySelector('[data-testid=settings-save]');
+      function SettingsPage() {}
+      function SettingsForm() {}
+      function SaveButton() {}
+      const page = { type: SettingsPage, return: null };
+      const form = { type: SettingsForm, return: page };
+      const save = { type: SaveButton, return: form };
+      // Radix-style internals that should be filtered out
+      const slot = { type: Object.assign(function () {}, { displayName: 'Primitive.button.SlotClone' }), return: save };
+      const provider = { type: function TooltipProvider() {}, return: slot };
+      btn.__reactFiber$test = { type: 'button', return: provider };
+
+      document.getElementById('broken').addEventListener('click', () => {
+        console.error('TypeError: Cannot read properties of undefined (reading "id")');
+      });
+      document.querySelectorAll('[data-nav]').forEach((a) =>
+        a.addEventListener('click', (e) => {
+          e.preventDefault();
+          history.pushState({}, '', a.getAttribute('href'));
+          document.getElementById('title').textContent = a.textContent;
+          document.title = 'Test App – ' + a.textContent;
+        }),
+      );
+    </script>
+  </body>
+</html>

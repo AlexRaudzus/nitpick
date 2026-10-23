@@ -1,0 +1,55 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`renderMarkdown > renders the snapshot 1`] = `
+"# UI feedback — localhost:3000
+
+> Collected with agent-feedback while clicking through the app. Each numbered item below is one piece of
+> feedback. Locate the UI in code via test id / component / selector, use the screenshots for visual context
+> (the viewport screenshot has a numbered marker), and check the timeline for how the state was reached.
+> Structured data for all items: \`feedback.json\`.
+
+## Context
+
+- Recorded: 2026-10-23 14:02:00 – 14:03:00
+- Viewport: 1440×900 @2x
+- Browser: TestBrowser/1.0
+- Pages visited: \`/settings\`, \`https://login.example.com/authorize\`
+- App context (http://localhost:3000):
+  - role: admin
+  - version: 2.4.1
+
+## Feedback (1 item)
+
+### 1. Label sollte "Sichern" heißen
+
+**Page:** \`/settings\` — Settings  
+**Type:** element comment
+
+> Label sollte "Sichern" heißen
+> Und größer sein
+
+**Element:** \`button\` · role=button · name="Speichern"
+- test id: \`data-testid=settings-save\`
+- component: \`SettingsPage › SettingsForm\`
+- selector: \`[data-testid="settings-save"]\`
+- position (document): x=10 y=20 w=100 h=30
+
+**Screenshots:** \`screenshots/01-crop.png\` (close-up), \`screenshots/01-viewport.png\` (viewport, marker 1)
+
+**Steps before this (see timeline):** #1, #2
+
+**Console errors shortly before:**
+- \`TypeError: x is undefined\` (×2)
+
+## Timeline
+
+1. 14:02:00 navigate /settings ("Settings")
+2. 14:02:01 click button "Speichern"
+3. 14:02:05 💬 feedback #1
+4. 14:02:08 navigate /authorize _(now on login.example.com)_
+
+## Console errors & warnings (deduplicated)
+
+- 14:02:02 **error** \`TypeError: x is undefined\` (×2) on \`/settings\`
+"
+`;

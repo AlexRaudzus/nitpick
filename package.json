@@ -1,0 +1,32 @@
+{
+  "name": "agent-feedback",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser extension to collect UI feedback (comments, screenshots, timeline) for coding agents",
+  "scripts": {
+    "dev": "wxt",
+    "build": "wxt build",
+    "zip": "wxt zip",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "postinstall": "wxt prepare",
+    "e2e": "node dev/e2e.mjs",
+    "serve": "node dev/serve.mjs"
+  },
+  "dependencies": {
+    "@medv/finder": "^4.0.2",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@wxt-dev/module-react": "^1.2.2",
+    "happy-dom": "^21.0.4",
+    "playwright": "^1.64.1",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5",
+    "wxt": "^0.21.4"
+  }
+}
