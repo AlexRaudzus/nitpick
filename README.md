@@ -1,4 +1,4 @@
-# Agent Feedback
+# Nitpick
 
 UI-Feedback für Coding-Agents sammeln: durch die App klicken, Elemente oder Bereiche kommentieren, am Ende einen Export erzeugen, den ein Agent abarbeiten kann.
 
@@ -24,9 +24,10 @@ Für die Entwicklung an der Extension selbst: `pnpm dev` startet einen Browser m
 3. Toolbar unten rechts:
    - **+ Kommentar** – ein einzelnes Element kommentieren (ohne Tasten halten; auch `Alt+Shift+C`)
    - **Bereich** – Rechteck aufziehen und kommentieren
-   - **Notiz** / **Liste** – öffnen sich beim Hovern über der Toolbar (Klick hält sie offen). Die Notiz gilt pro Seite und speichert sich selbst.
+   - **Notiz** / **Liste** (Symbol mit Anzahl) – öffnen sich beim Hovern über der Toolbar (Klick hält sie offen). Die Notiz gilt pro Seite und speichert sich selbst.
+   - **⠿** – Toolbar verschieben, z. B. um Elemente dahinter auszuwählen. Die Position wird pro Website gemerkt, Doppelklick setzt sie zurück.
    - **⌄** – Toolbar ausblenden (Headless-Modus)
-4. **Fertig** → **Exportieren** schreibt nach `~/Downloads/agent-feedback/<datum>_<uhrzeit>_<host>/` und legt den Ordnerpfad in die Zwischenablage.
+4. **Fertig** → **Exportieren** schreibt nach `~/Downloads/nitpick/<datum>_<uhrzeit>_<host>/` und legt den Ordnerpfad in die Zwischenablage.
 
 Rechtsklick aufs Icon: Exportieren, Toolbar ein-/ausblenden, Tastenkürzel anpassen.
 
@@ -64,9 +65,9 @@ Kommentare, Timeline und Console-Errors bleiben über Navigationen, Reloads und 
 ### Export
 
 ```
-agent-feedback/2026-10-23_14-02_localhost_3000/
+nitpick/2026-10-23_14-02_localhost_3000/
   feedback.md          ← primär für den Agent
-  feedback.json        ← gleiche Daten strukturiert (format: agent-feedback/v1)
+  feedback.json        ← gleiche Daten strukturiert (format: nitpick/v1)
   screenshots/
     01-crop.png        ← Close-up des Elements/Bereichs
     01-viewport.png    ← sichtbarer Bereich mit nummeriertem Marker
@@ -84,7 +85,7 @@ Danach folgen die komplette Action-Timeline und alle Console-Errors/-Warnings, d
 
 An den Agent übergeben, z. B. in Claude Code:
 
-> Arbeite das Feedback in ~/Downloads/agent-feedback/2026-10-23_14-02_localhost_3000/feedback.md ab. Schau dir zu jedem Punkt die Screenshots an.
+> Arbeite das Feedback in ~/Downloads/nitpick/2026-10-23_14-02_localhost_3000/feedback.md ab. Schau dir zu jedem Punkt die Screenshots an.
 
 ### Datenschutz
 
@@ -98,15 +99,15 @@ Die App kann zusätzlichen Kontext liefern (User-Rolle, Version, Tenant, Feature
 
 ```html
 <!-- 1. statisch -->
-<meta name="agent-feedback:version" content="2.4.1">
+<meta name="nitpick:version" content="2.4.1">
 ```
 
 ```js
 // 2. global (Objekt oder Funktion, darf async sein) – wird bei jedem Kommentar neu gelesen
-window.__AGENT_FEEDBACK__ = () => ({ userRole: currentUser.role, tenant: tenant.slug });
+window.__NITPICK__ = () => ({ userRole: currentUser.role, tenant: tenant.slug });
 
 // 3. Event – praktisch aus Komponenten/Stores heraus
-window.addEventListener('agent-feedback:request-context', (e) => {
+window.addEventListener('nitpick:request-context', (e) => {
   e.detail.respond({ featureFlags: flags.enabled() });
 });
 ```
@@ -119,11 +120,11 @@ Ohne installierte Extension passiert nichts. Der Code kann also auch in Producti
 pnpm build:embed   # → dist/embed/{index,loader}.js + Typen; React ist peer dependency
 ```
 
-Einbindung, z. B. als `"agent-feedback": "link:../agent-feedback"`:
+Einbindung, z. B. als `"nitpick": "link:../nitpick"`:
 
 ```ts
 // App-Shell: winzig, ohne Abhängigkeiten
-import { hasPendingSession, loadRecorder } from 'agent-feedback/embed/loader';
+import { hasPendingSession, loadRecorder } from 'nitpick/embed/loader';
 
 async function recorder() {
   const { createFeedbackRecorder } = await loadRecorder(); // lädt Toolbar + Recorder erst bei Bedarf
@@ -161,6 +162,8 @@ Unterschiede zur Extension:
 Lokal ausprobieren: `pnpm dev:embed` → http://localhost:5180/settings (mit simuliertem Management-Modal).
 
 ## Entwicklung
+
+Icon: `assets/icon.png`, erzeugt mit Codex; weitere Entwürfe liegen in `assets/icon-concepts/`. Die Größen in `public/icon/` werden aus `assets/icon.png` heruntergerechnet.
 
 ```bash
 pnpm typecheck

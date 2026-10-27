@@ -55,7 +55,7 @@ const pageOf = (tab?: Browser.tabs.Tab) => (tab?.url?.startsWith('http') ? { url
 async function exportFolder(tab?: Browser.tabs.Tab) {
   const bundle = await store.bundle();
   if (!bundle.session.comments.length) throw new Error('Noch keine Kommentare');
-  const folder = `agent-feedback/${bundle.folderName}`;
+  const folder = `nitpick/${bundle.folderName}`;
   const files: { name: string; url: string }[] = [
     { name: 'feedback.md', url: dataUrl('text/markdown', bundle.markdown) },
     { name: 'feedback.json', url: dataUrl('application/json', bundle.json) },
@@ -79,9 +79,15 @@ async function exportFolder(tab?: Browser.tabs.Tab) {
   const restarted = bundle.session.active;
   if (restarted) {
     await store.discard();
-    await store.start(pageOf(tab));
+    await store.start(pageOf(tab), tab?.id);
   }
   return { folder, path, files: files.length, copied, restarted };
+}
+
+/** Steps, logs and metadata only count from tabs that belong to the session (not GitHub in the next tab). */
+async function fromSessionTab(sender: Browser.runtime.MessageSender): Promise<boolean> {
+  const s = await store.load();
+  return !s?.tabs || (sender.tab?.id != null && s.tabs.includes(sender.tab.id));
 }
 
 async function onRequest(req: Request, sender: Browser.runtime.MessageSender): Promise<unknown> {
@@ -91,7 +97,7 @@ async function onRequest(req: Request, sender: Browser.runtime.MessageSender): P
     case 'session:start': {
       // The page the session was started on already loaded, so record it as the first step.
       const tab = sender.tab ?? (await browser.tabs.query({ active: true, lastFocusedWindow: true }))[0];
-      return store.start(pageOf(tab));
+      return store.start(pageOf(tab), tab?.id);
     }
     case 'session:stop':
       return store.stop();
@@ -106,18 +112,22 @@ async function onRequest(req: Request, sender: Browser.runtime.MessageSender): P
       if (windowId == null) throw new Error('Kein Tab');
       return browser.tabs.captureVisibleTab(windowId, { format: 'png' });
     }
-    case 'comment:add':
-      return store.addComment(req.comment, req.screenshots);
+    case 'comment:add': {
+      // Commenting in a tab makes it part of the session from now on
+      const created = await store.addComment(req.comment, req.screenshots);
+      if (sender.tab?.id != null) await store.addTab(sender.tab.id);
+      return created;
+    }
     case 'comment:update':
       return store.updateComment(req.id, req.text);
     case 'comment:delete':
       return store.deleteComment(req.id);
     case 'timeline:add':
-      return store.addTimeline(req.event);
+      return (await fromSessionTab(sender)) ? store.addTimeline(req.event) : null;
     case 'log:add':
-      return store.addLog(req.entry);
+      return (await fromSessionTab(sender)) ? store.addLog(req.entry) : null;
     case 'metadata:set':
-      return store.setMetadata(req.origin, req.metadata);
+      return (await fromSessionTab(sender)) ? store.setMetadata(req.origin, req.metadata) : null;
     case 'export:folder':
       return exportFolder(sender.tab);
     case 'clipboard:copy':
@@ -166,9 +176,10 @@ async function commandTab(tabId: number, command: HostCommand): Promise<boolean>
 /** Icon click: start a session, resume a finished one, or show/hide the toolbar of the running one. */
 async function onActionClicked(tab?: Browser.tabs.Tab) {
   const s = await store.load();
-  if (!s) await store.start(pageOf(tab));
+  if (!s) await store.start(pageOf(tab), tab?.id);
   else if (!s.active) await store.resume();
   else await store.setHidden(!s.hidden);
+  if (s && tab?.id != null) await store.addTab(tab.id);
 }
 
 async function exportFromMenu(tab?: Browser.tabs.Tab) {
@@ -183,10 +194,10 @@ async function updateBadge(s: FeedbackSession | null) {
   await browser.action.setBadgeBackgroundColor({ color: s?.active ? '#ff3b6b' : '#71717a' });
   await browser.action.setTitle({
     title: !s
-      ? 'Agent Feedback – Klick startet eine Session'
+      ? 'Nitpick – Klick startet eine Session'
       : s.active
-        ? `Agent Feedback – ${s.comments.length} Kommentare · Klick: Toolbar ${s.hidden ? 'zeigen' : 'ausblenden'}`
-        : 'Agent Feedback – Session beendet · Klick: fortsetzen',
+        ? `Nitpick – ${s.comments.length} Kommentare · Klick: Toolbar ${s.hidden ? 'zeigen' : 'ausblenden'}`
+        : 'Nitpick – Session beendet · Klick: fortsetzen',
   });
 }
 
@@ -206,6 +217,16 @@ export default defineBackground(() => {
     });
   });
 
+  // Links opened in a new tab from the app keep belonging to the session
+  browser.tabs.onCreated.addListener(async (tab) => {
+    const s = await store.load();
+    // Only real link targets: an empty new tab (Ctrl+T, about:blank) may report an opener too
+    const target = tab.pendingUrl || tab.url || '';
+    if (tab.id != null && tab.openerTabId != null && s?.tabs?.includes(tab.openerTabId) && target.startsWith('http')) {
+      await store.addTab(tab.id);
+    }
+  });
+
   browser.action.onClicked.addListener((tab) => void onActionClicked(tab));
 
   browser.contextMenus.onClicked.addListener(async (info, tab) => {
@@ -221,5 +242,5 @@ export default defineBackground(() => {
   });
 
   // Test hook for the e2e script (the toolbar icon cannot be clicked from Playwright)
-  (globalThis as unknown as { __agentFeedback: unknown }).__agentFeedback = { onActionClicked };
+  (globalThis as unknown as { __nitpick: unknown }).__nitpick = { onActionClicked };
 });

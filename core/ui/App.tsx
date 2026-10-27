@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { describeElement } from '../describe-element';
-import type { FeedbackHost } from '../host';
+import type { FeedbackHost, FinishAction } from '../host';
 import type { CommentKind, ElementDescriptor, FeedbackComment, FeedbackSession, Rect } from '../types';
 import { captureScreenshots } from './capture';
-import { ConfirmButton } from './ConfirmButton';
 import { HOLD_LABEL, holdPressed, SHORTCUTS, type Command } from './keys';
 import { startRecorder } from './recorder';
 
@@ -262,15 +261,12 @@ export function App({ host, api }: { host: HTMLElement; api: FeedbackHost }) {
     clearTimeout(hoverTimer.current);
     hoverTimer.current = setTimeout(() => setDrawer(d), delay);
   };
+  // Mouse: open on hover/click, close when the pointer leaves the dock. Keyboard shortcuts and
+  // marker clicks open it "pinned" (there is no hover to end), until the pointer has been in the dock once.
   const toggleDrawer = (d: Exclude<Drawer, null>) => {
     clearTimeout(hoverTimer.current);
-    if (drawer === d && drawerPinned) {
-      setDrawer(null);
-      setDrawerPinned(false);
-    } else {
-      setDrawer(d);
-      setDrawerPinned(true);
-    }
+    setDrawerPinned(false);
+    setDrawer(drawer === d ? null : d);
   };
   const closeDrawer = () => {
     clearTimeout(hoverTimer.current);
@@ -278,47 +274,57 @@ export function App({ host, api }: { host: HTMLElement; api: FeedbackHost }) {
     setDrawerPinned(false);
   };
 
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  useEffect(() => {
+    if (!confirmDiscard) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setConfirmDiscard(false);
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [confirmDiscard]);
+  // A new or resumed session never starts in the question
+  useEffect(() => setConfirmDiscard(false), [session?.id, session?.active]);
+
+  // ---- Draggable dock (so elements behind it can be picked) -----------------
+  const dockRef = useRef<HTMLDivElement>(null);
+  const [dockPos, setDockPos] = useState<DockPos | null>(loadDockPos);
+  const saveDockPos = (pos: DockPos | null) => {
+    setDockPos(pos);
+    try {
+      if (pos) localStorage.setItem(DOCK_KEY, JSON.stringify(pos));
+      else localStorage.removeItem(DOCK_KEY);
+    } catch {
+      // storage blocked
+    }
+  };
+  const startDrag = (e: React.PointerEvent) => {
+    const dock = dockRef.current;
+    if (!dock || e.button !== 0) return;
+    e.preventDefault();
+    const r = dock.getBoundingClientRect();
+    const bar = dock.querySelector('.af-toolbar')!.getBoundingClientRect();
+    const from = { x: e.clientX, y: e.clientY, right: window.innerWidth - r.right, top: bar.top };
+    const grip = e.currentTarget as HTMLElement;
+    grip.setPointerCapture(e.pointerId);
+    let pos: DockPos = { right: from.right, top: from.top };
+    const move = (ev: PointerEvent) => {
+      pos = clampDock({ right: from.right - (ev.clientX - from.x), top: from.top + (ev.clientY - from.y) }, dock);
+      setDockPos(pos);
+    };
+    const up = () => {
+      grip.removeEventListener('pointermove', move);
+      grip.removeEventListener('pointerup', up);
+      grip.removeEventListener('pointercancel', up);
+      saveDockPos(pos);
+    };
+    grip.addEventListener('pointermove', move);
+    grip.addEventListener('pointerup', up);
+    grip.addEventListener('pointercancel', up);
+  };
+
   // ---- Saving ---------------------------------------------------------------
   const [saving, setSaving] = useState(false);
   const saveComment = async (d: Draft, text: string): Promise<FeedbackComment | null> => {
-    commandRef.current = (cmd) => {
-    const s = sessionRef.current;
-    if (!s) return;
-    switch (cmd) {
-      case 'pick':
-        setDraft(null);
-        setRegionActive(false);
-        setOneShot((v) => !v);
-        return;
-      case 'region':
-        setDraft(null);
-        setOneShot(false);
-        setRegionActive((v) => !v);
-        return;
-      case 'note':
-      case 'list':
-        if (drawer === cmd && drawerPinned) closeDrawer();
-        else {
-          clearTimeout(hoverTimer.current);
-          setDrawer(cmd);
-          setDrawerPinned(true);
-        }
-        return;
-      case 'toggle-toolbar':
-        api.setHidden(!s.hidden);
-        return;
-      case 'export': {
-        const primary = api.finishActions[0];
-        if (!s.comments.length) notify('Noch keine Kommentare zum Exportieren');
-        else if (primary) runAction(primary.run);
-        return;
-      }
-    }
-  };
-
-  if (!session) return null;
-  // Headless mode only applies while recording; a finished session always shows its actions.
-  const hidden = session.active && !!session.hidden;
+    if (!session) return null;
     setSaving(true);
     try {
       let element = undefined;
@@ -445,13 +451,20 @@ export function App({ host, api }: { host: HTMLElement; api: FeedbackHost }) {
   const commentsHere = session.comments.filter((c) => samePage(c.url, location.href));
   const listButton = (
     <button
-      className={drawer === 'list' ? 'af-on-soft' : ''}
+      className={`af-list-btn${drawer === 'list' ? ' af-on-soft' : ''}`}
+      aria-label={`Liste (${session.comments.length})`}
+      title={`Kommentare (${HOLD_LABEL}+K)`}
       onMouseEnter={() => hoverDrawer('list', 120)}
       onClick={() => toggleDrawer('list')}
     >
-      Liste
+      {session.active && <span className="af-dot" title="Session läuft" />}
+      <ListIcon />
+      <span className="af-rec">{session.comments.length}</span>
     </button>
   );
+  // A finished session is reviewed: the list is simply always open.
+  const shownDrawer: Drawer = session.active ? drawer : 'list';
+  const flipped = !!dockPos && dockPos.top < window.innerHeight / 2;
 
   return (
     <div className="af-root" ref={rootRef} popover="manual">
@@ -490,34 +503,44 @@ export function App({ host, api }: { host: HTMLElement; api: FeedbackHost }) {
       )}
 
       {(!hidden || (drawer && drawerPinned)) && <div
-        className={`af-dock${hidden ? ' af-dock-bare' : ''}`}
-        onMouseEnter={() => clearTimeout(hoverTimer.current)}
+        ref={dockRef}
+        className={`af-dock${hidden ? ' af-dock-bare' : ''}${flipped ? ' af-dock-top' : ''}${session.active ? '' : ' af-finished'}`}
+        style={dockPos ? dockStyle(clampDock(dockPos, dockRef.current), toolbarHeight(dockRef.current)) : undefined}
+        onMouseEnter={() => {
+          clearTimeout(hoverTimer.current);
+          setDrawerPinned(false);
+        }}
         onMouseLeave={() => !drawerPinned && hoverDrawer(null, 350)}
       >
-        <div className={`af-drawer${drawer ? ' af-open' : ''}`}>
+        <div className={`af-drawer${shownDrawer ? ' af-open' : ''}`}>
           <div className="af-drawer-inner">
-            {drawer === 'note' && (
+            {shownDrawer === 'note' && (
               <NoteForm
                 key={location.pathname}
                 initial={pageNote()?.text ?? ''}
                 exists={!!pageNote()}
                 saving={saving}
-                onEngage={() => setDrawerPinned(true)}
                 autoFocus={drawerPinned}
                 onClose={closeDrawer}
                 onPersist={persistNote}
               />
             )}
-            {drawer === 'list' && <CommentList api={api} session={session} onEngage={() => setDrawerPinned(true)} />}
+            {shownDrawer === 'list' && <CommentList api={api} session={session} />}
           </div>
         </div>
 
         {!hidden && <div className="af-toolbar">
+          <span
+            className="af-grip"
+            title="Verschieben · Doppelklick: zurücksetzen"
+            onPointerDown={startDrag}
+            onDoubleClick={() => saveDockPos(null)}
+          >
+            <GripIcon />
+          </span>
           {session.active ? (
             <>
-              <span className="af-rec" title="Session läuft">
-                <span className="af-dot" /> {session.comments.length}
-              </span>
+              {listButton}
               <button
                 className={oneShot ? 'af-on' : ''}
                 title={`Ein Element kommentieren – oder ${HOLD_LABEL} gedrückt halten und klicken`}
@@ -549,7 +572,6 @@ export function App({ host, api }: { host: HTMLElement; api: FeedbackHost }) {
                 Notiz
               </button>
               <span className="af-sep" />
-              {listButton}
               <button className="af-primary" onClick={() => api.stop()}>
                 Fertig
               </button>
@@ -557,22 +579,34 @@ export function App({ host, api }: { host: HTMLElement; api: FeedbackHost }) {
                 ⌄
               </button>
             </>
+          ) : confirmDiscard ? (
+            // Asking replaces the whole row: nothing else to click while deciding
+            <>
+              <span className="af-confirm-question">
+                {session.comments.length === 1 ? 'Den Kommentar' : `Alle ${session.comments.length} Kommentare`} verwerfen?
+              </span>
+              <span className="af-spacer" />
+              <button autoFocus onClick={() => setConfirmDiscard(false)}>
+                Abbrechen
+              </button>
+              <button className="af-danger-solid" onClick={() => api.discard()}>
+                Verwerfen
+              </button>
+            </>
           ) : (
             <>
-              <span className="af-label">Beendet · {session.comments.length}</span>
-              {api.finishActions.map((a) => (
-                <button key={a.label} className={a.primary ? 'af-primary' : ''} onClick={() => runAction(a.run)}>
-                  {a.label}
-                </button>
-              ))}
-              {listButton}
-              <button onClick={() => api.resume()}>Fortsetzen</button>
-              <ConfirmButton
-                label="Verwerfen"
-                question="Alle verwerfen?"
-                className="af-danger"
-                onConfirm={() => api.discard()}
-              />
+              <button className="af-ghost" title="Weiter kommentieren" onClick={() => api.resume()}>
+                Fortsetzen
+              </button>
+              <button
+                className="af-ghost af-danger"
+                // Nothing to lose without comments: no question
+                onClick={() => (session.comments.length ? setConfirmDiscard(true) : api.discard())}
+              >
+                Verwerfen
+              </button>
+              <span className="af-spacer" />
+              {session.comments.length > 0 && <SplitButton actions={api.finishActions} run={runAction} />}
             </>
           )}
         </div>}
@@ -589,6 +623,121 @@ export function App({ host, api }: { host: HTMLElement; api: FeedbackHost }) {
     </div>
   );
 }
+
+/** Position of the toolbar row (the drawer opens away from the closer screen edge). */
+type DockPos = { right: number; top: number };
+
+/** "Exportieren | ▾": the main action plus a menu with all variants. */
+function SplitButton({ actions, run }: { actions: FinishAction[]; run: (fn: () => Promise<string | void>) => void }) {
+  const [menu, setMenu] = useState<React.CSSProperties | null>(null);
+  const caret = useRef<HTMLButtonElement>(null);
+  const [main] = actions;
+  useEffect(() => {
+    if (!menu) return;
+    const close = (e: Event) => {
+      if (e instanceof KeyboardEvent && e.key !== 'Escape') return;
+      setMenu(null);
+    };
+    // The dock clips overflow, so the menu is fixed-positioned; scrolling/resizing would detach it.
+    window.addEventListener('keydown', close, true);
+    window.addEventListener('resize', close);
+    window.addEventListener('scroll', close, true);
+    return () => {
+      window.removeEventListener('keydown', close, true);
+      window.removeEventListener('resize', close);
+      window.removeEventListener('scroll', close, true);
+    };
+  }, [menu]);
+  if (!main) return null;
+  const open = () => {
+    const r = caret.current!.getBoundingClientRect();
+    const up = r.top > window.innerHeight / 2;
+    setMenu({
+      right: window.innerWidth - r.right,
+      ...(up ? { bottom: window.innerHeight - r.top + 6 } : { top: r.bottom + 6 }),
+    });
+  };
+  return (
+    <span className="af-split">
+      <button className="af-primary" onClick={() => run(main.run)}>
+        {main.label}
+      </button>
+      {actions.length > 1 && (
+        <button
+          ref={caret}
+          className="af-primary af-caret"
+          aria-label="Weitere Export-Optionen"
+          aria-expanded={!!menu}
+          onClick={() => (menu ? setMenu(null) : open())}
+        >
+          <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+            <path d="M2 3.5 5 6.5 8 3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+      )}
+      {menu && (
+        <>
+          <div className="af-menu-backdrop" onClick={() => setMenu(null)} />
+          <div className="af-menu" role="menu" style={menu}>
+            {actions.map((a) => (
+              <button
+                key={a.label}
+                role="menuitem"
+                onClick={() => {
+                  setMenu(null);
+                  run(a.run);
+                }}
+              >
+                {a.menuLabel ?? a.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </span>
+  );
+}
+/** Per site, like the page layout it has to make room for. */
+const DOCK_KEY = 'nitpick:dock';
+function loadDockPos(): DockPos | null {
+  try {
+    const v = JSON.parse(localStorage.getItem(DOCK_KEY) ?? 'null');
+    return typeof v?.right === 'number' && typeof v?.top === 'number' ? v : null;
+  } catch {
+    return null;
+  }
+}
+/** Keep the dock fully on screen (also after the window got smaller). */
+function clampDock(pos: DockPos, dock: HTMLElement | null): DockPos {
+  const w = dock?.offsetWidth ?? 300;
+  const h = toolbarHeight(dock);
+  return {
+    right: Math.round(Math.max(4, Math.min(pos.right, window.innerWidth - w - 4))),
+    top: Math.round(Math.max(4, Math.min(pos.top, window.innerHeight - h - 4))),
+  };
+}
+const toolbarHeight = (dock: HTMLElement | null) => (dock?.querySelector('.af-toolbar') as HTMLElement | null)?.offsetHeight ?? 46;
+/** Upper half: anchor the toolbar's top, drawer below. Lower half: anchor its bottom, drawer above. */
+function dockStyle(pos: DockPos, barHeight: number): React.CSSProperties {
+  if (pos.top < window.innerHeight / 2) return { right: pos.right, top: pos.top, bottom: 'auto' };
+  // +2: the dock's border around the toolbar row
+  return { right: pos.right, bottom: window.innerHeight - pos.top - barHeight - 2 };
+}
+
+const GripIcon = () => (
+  <svg width="10" height="16" viewBox="0 0 10 16" aria-hidden="true">
+    {[3, 8, 13].flatMap((y) => [2.5, 7.5].map((x) => <circle key={`${x}-${y}`} cx={x} cy={y} r="1.4" fill="currentColor" />))}
+  </svg>
+);
+
+const ListIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+    <path d="M5.5 4h8M5.5 8h8M5.5 12h8" />
+    <circle cx="2.2" cy="4" r="0.6" fill="currentColor" />
+    <circle cx="2.2" cy="8" r="0.6" fill="currentColor" />
+    <circle cx="2.2" cy="12" r="0.6" fill="currentColor" />
+  </svg>
+);
 
 function rectStyle(r: Rect): React.CSSProperties {
   return { left: r.x, top: r.y, width: r.width, height: r.height };
@@ -753,7 +902,6 @@ function NoteForm(props: {
   saving: boolean;
   onPersist: (text: string) => Promise<unknown>;
   onClose: () => void;
-  onEngage: () => void;
 }) {
   const [text, setText] = useState(props.initial);
   const [dirty, setDirty] = useState(false);
@@ -785,7 +933,6 @@ function NoteForm(props: {
         autoFocus={props.autoFocus}
         value={text}
         placeholder="Allgemeines Feedback zu dieser Seite…"
-        onFocus={props.onEngage}
         onBlur={flush}
         onChange={(e) => {
           setText(e.target.value);
@@ -809,9 +956,19 @@ function NoteForm(props: {
   );
 }
 
-function CommentList({ api, session, onEngage }: { api: FeedbackHost; session: FeedbackSession; onEngage: () => void }) {
+function CommentList({ api, session }: { api: FeedbackHost; session: FeedbackSession }) {
   const [editing, setEditing] = useState<string | null>(null);
   const [text, setText] = useState('');
+  // The drawer closes as soon as the pointer leaves it: keep an edit in progress instead of dropping it
+  const pending = useRef<{ id: string; text: string; original: string } | null>(null);
+  pending.current = editing ? { id: editing, text, original: session.comments.find((c) => c.id === editing)?.text ?? '' } : null;
+  useEffect(
+    () => () => {
+      const p = pending.current;
+      if (p && p.text.trim() && p.text !== p.original) api.updateComment(p.id, p.text.trim());
+    },
+    [api],
+  );
   const path = (url: string) => {
     try {
       return new URL(url).pathname;
@@ -842,7 +999,14 @@ function CommentList({ api, session, onEngage }: { api: FeedbackHost; session: F
             <>
               <textarea autoFocus value={text} onChange={(e) => setText(e.target.value)} />
               <div className="af-composer-actions">
-                <button onClick={() => setEditing(null)}>Abbrechen</button>
+                <button
+                  onClick={() => {
+                    pending.current = null;
+                    setEditing(null);
+                  }}
+                >
+                  Abbrechen
+                </button>
                 <button
                   className="af-primary"
                   onClick={async () => {
@@ -860,7 +1024,6 @@ function CommentList({ api, session, onEngage }: { api: FeedbackHost; session: F
               <div className="af-item-actions">
                 <button
                   onClick={() => {
-                    onEngage();
                     setEditing(c.id);
                     setText(c.text);
                   }}

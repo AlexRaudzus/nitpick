@@ -202,7 +202,7 @@ export function renderMarkdown(session: FeedbackSession, opts: RenderOptions = {
 
   out.push(`# UI feedback — ${hostOf(firstComment?.url ?? pages[0] ?? '') || 'session'}`, '');
   out.push(
-    '> Collected with agent-feedback while clicking through the app. Each numbered item below is one piece of',
+    '> Collected with Nitpick while clicking through the app. Each numbered item below is one piece of',
     '> feedback. Locate the UI in code via test id / component / selector, use the screenshots for visual context',
     '> (the viewport screenshot has a numbered marker), and check the timeline for how the state was reached.',
     '> Structured data for all items: `feedback.json`.',
@@ -264,5 +264,5 @@ export function renderJson(session: FeedbackSession): string {
       viewport: c.screenshots.viewport ? names.get(c.screenshots.viewport) : undefined,
     },
   }));
-  return JSON.stringify({ format: 'agent-feedback/v1', ...session, comments }, null, 2);
+  return JSON.stringify({ format: 'nitpick/v1', ...session, comments }, null, 2);
 }

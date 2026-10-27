@@ -1,0 +1,3 @@
+- **Concept 1 — Cursor marker:** A bold white pointer with a pink-red dot communicates clicking an element to leave a nitpick.
+- **Concept 2 — Comment pin:** A pink-red speech-bubble pin anchors a comment to a specific place on the page.
+- **Concept 3 — Pixel selection:** Two white selection brackets frame a pink-red pixel to emphasize precise UI feedback.

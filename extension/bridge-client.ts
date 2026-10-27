@@ -46,11 +46,11 @@ export async function probeComponents(
   el: Element,
 ): Promise<{ components?: string[]; sourceFile?: string; minified?: boolean }> {
   const requestId = rid();
-  el.setAttribute('data-agent-feedback-probe', requestId);
+  el.setAttribute('data-nitpick-probe', requestId);
   try {
     const res = await request({ type: 'probe', requestId }, 'probe-result', 500);
     return { components: res?.components, sourceFile: res?.sourceFile, minified: res?.minified };
   } finally {
-    el.removeAttribute('data-agent-feedback-probe');
+    el.removeAttribute('data-nitpick-probe');
   }
 }

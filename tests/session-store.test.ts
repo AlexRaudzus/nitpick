@@ -102,4 +102,12 @@ describe('session store', () => {
     await store.start();
     expect((await store.load())!.hidden).toBe(true);
   });
+
+  it('tracks the tabs that belong to the session', async () => {
+    const store = createSessionStore(memoryKV());
+    await store.start({ url }, 7);
+    await store.addTab(9);
+    await store.addTab(9);
+    expect((await store.load())!.tabs).toEqual([7, 9]);
+  });
 });

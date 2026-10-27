@@ -95,7 +95,7 @@ export function getXPath(el: Element): string {
   const parts: string[] = [];
   let node: Element | null = el;
   while (node && node.nodeType === Node.ELEMENT_NODE) {
-    if (node.id && node.ownerDocument.querySelectorAll(`#${CSS.escape(node.id)}`).length === 1) {
+    if (stableId(node.id) && node.ownerDocument.querySelectorAll(`#${CSS.escape(node.id)}`).length === 1) {
       parts.unshift(`//*[@id="${node.id}"]`);
       return parts.join('/');
     }
@@ -119,6 +119,11 @@ export function getXPath(el: Element): string {
 const UTILITY_CLASS =
   /[:/[\]!.]|^-?(p[xytrbl]?|m[xytrbl]?|w|h|size|min-[wh]|max-[wh]|z|gap(-[xy])?|space-[xy]|inset(-[xy])?|top|left|right|bottom|start|end|flex|grid|cols?|rows?|col-span|row-span|basis|grow|shrink|order|items|justify|content|self|place|text|font|leading|tracking|bg|from|via|to|border|rounded|shadow|ring|outline|divide|opacity|overflow|overscroll|object|cursor|select|pointer-events|transition|duration|delay|ease|animate|transform|translate-[xy]|scale|rotate|skew|origin|fill|stroke|line-clamp|truncate|whitespace|break|underline|no-underline|uppercase|lowercase|capitalize|italic|antialiased|sr-only|not-sr-only|block|inline|inline-block|inline-flex|inline-grid|hidden|contents|table|absolute|relative|fixed|sticky|static|visible|invisible|isolate|aspect|columns|list|decoration|align|backdrop|blur|filter|mix-blend|accent|caret|scroll|snap|touch|resize|appearance|will-change|group|peer|container|prose|dark|sm|md|lg|xl|2xl)(-|$)/;
 
+/** Ids from useId()/Radix (`radix-_r_13_`, `:r1:`) or with long numbers change on every render/build. */
+const stableId = (id: string) => !!id && !/\d{3,}|^:|^radix-|_r_|^headlessui-|^mui-/.test(id);
+/** Attribute value inside double quotes: only `"` and `\` need escaping (CSS.escape would also escape `/`). */
+const quote = (v: string) => `"${v.replace(/["\\]/g, '\\$&')}"`;
+
 const isSemanticClass = (name: string) => !GENERATED_CLASS.test(name) && !UTILITY_CLASS.test(name);
 
 const unique = (el: Element, sel: string) => {
@@ -136,10 +141,10 @@ function ownAttrSelector(el: Element): string | undefined {
   for (const attr of STABLE_ATTRS) {
     const v = el.getAttribute(attr);
     if (!v || v.length > 80) continue;
-    const sel = `${tag}[${attr}="${CSS.escape(v)}"]`;
+    const sel = `${tag}[${attr}=${quote(v)}]`;
     if (unique(el, sel)) return sel;
   }
-  if (el.id && !/\d{3,}|^:|^radix-/.test(el.id) && unique(el, `#${CSS.escape(el.id)}`)) return `#${CSS.escape(el.id)}`;
+  if (stableId(el.id) && unique(el, `#${CSS.escape(el.id)}`)) return `#${CSS.escape(el.id)}`;
   return undefined;
 }
 
@@ -151,7 +156,7 @@ export function getCssSelector(el: Element): string {
   for (const attr of TEST_ID_ATTRS) {
     const v = el.getAttribute(attr);
     if (!v) continue;
-    const sel = `[${attr}="${CSS.escape(v)}"]`;
+    const sel = `[${attr}=${quote(v)}]`;
     if (el.ownerDocument.querySelectorAll(sel).length === 1) return sel;
   }
   const own = ownAttrSelector(el);
@@ -161,7 +166,7 @@ export function getCssSelector(el: Element): string {
   try {
     found = finder(el, {
       root: el.ownerDocument.body ?? el.ownerDocument.documentElement,
-      idName: (name) => !/\d{3,}|^:|^radix-/.test(name),
+      idName: stableId,
       className: isSemanticClass,
       attr: (name, value) => STABLE_ATTRS.includes(name) && value.length <= 80,
       timeoutMs: 500,
@@ -184,11 +189,11 @@ function anchoredSelector(el: Element): string | undefined {
     for (const attr of STABLE_ATTRS) {
       const v = node.getAttribute(attr);
       if (!v || v.length > 80) continue;
-      const anchor = `${node.tagName.toLowerCase()}[${attr}="${CSS.escape(v)}"]`;
+      const anchor = `${node.tagName.toLowerCase()}[${attr}=${quote(v)}]`;
       const candidate = [anchor, ...parts].join(' > ');
       if (el.ownerDocument.querySelectorAll(candidate).length === 1) return candidate;
     }
-    if (node.id) {
+    if (stableId(node.id)) {
       const candidate = [`#${CSS.escape(node.id)}`, ...parts].join(' > ');
       if (el.ownerDocument.querySelectorAll(candidate).length === 1) return candidate;
     }
@@ -250,11 +255,12 @@ export function getContext(el: Element): string[] | undefined {
 export function describeElement(el: Element): ElementDescriptor {
   const rect = el.getBoundingClientRect();
   const win = el.ownerDocument.defaultView ?? window;
-  const classes = [...el.classList].filter((c) => !GENERATED_CLASS.test(c)).slice(0, 6);
+  // Only classes that mean something (`settings-card`), not `flex w-full gap-2`
+  const classes = [...el.classList].filter(isSemanticClass).slice(0, 6);
   const text = cleanText((el as HTMLElement).innerText ?? el.textContent);
   return {
     tag: el.tagName.toLowerCase(),
-    id: el.id || undefined,
+    id: stableId(el.id) ? el.id : undefined,
     testId: getTestId(el),
     slot: el.getAttribute('data-slot') ?? undefined,
     role: getRole(el),

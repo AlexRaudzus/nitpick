@@ -3,7 +3,7 @@
  *
  *   if (hasPendingSession()) (await loadRecorder()).createFeedbackRecorder(opts).restore();
  */
-export const PENDING_FLAG = 'agent-feedback:pending';
+export const PENDING_FLAG = 'nitpick:pending';
 
 /** True while a feedback session exists (recording or finished but not handed over yet). */
 export function hasPendingSession(): boolean {

@@ -14,9 +14,9 @@ export default defineContentScript({
   matchAboutBlank: true,
   main() {
     // The extension re-injects itself into open tabs after an update; hook the page only once.
-    const w = window as unknown as { __agentFeedbackBridge?: boolean };
-    if (w.__agentFeedbackBridge) return;
-    w.__agentFeedbackBridge = true;
+    const w = window as unknown as { __nitpickBridge?: boolean };
+    if (w.__nitpickBridge) return;
+    w.__nitpickBridge = true;
 
     const post = (msg: BridgeToContent) => window.postMessage({ source: BRIDGE_SOURCE, ...msg }, '*');
 
@@ -29,7 +29,7 @@ export default defineContentScript({
       if (msg.type === 'request-context') {
         post({ type: 'context', requestId: msg.requestId, metadata: await collectContext() });
       } else if (msg.type === 'probe') {
-        const el = document.querySelector(`[data-agent-feedback-probe="${msg.requestId}"]`);
+        const el = document.querySelector(`[data-nitpick-probe="${msg.requestId}"]`);
         post({ type: 'probe-result', requestId: msg.requestId, ...(el ? inspectComponents(el) : {}) });
       }
     });

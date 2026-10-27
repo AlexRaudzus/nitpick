@@ -23,9 +23,13 @@ function formatArgs(args: unknown[]): string {
   return [head, ...args.slice(i).map(stringifyArg)].join(' ');
 }
 
+/** Browser noise that never points at a real bug. */
+const BENIGN = /ResizeObserver loop (completed with undelivered notifications|limit exceeded)/;
+
 /** Report console.error/warn, uncaught errors and unhandled rejections (redacted). */
 export function hookConsole(post: (event: PageEvent) => void) {
   const emit = (level: 'error' | 'warn', message: string, stack?: string) =>
+    !BENIGN.test(message) &&
     post({
       type: 'log',
       level,
@@ -72,18 +76,18 @@ export function hookHistory(post: (event: PageEvent) => void) {
 
 /**
  * Metadata a site can provide, in order of precedence (later wins):
- *  1. <meta name="agent-feedback:KEY" content="VALUE">
- *  2. window.__AGENT_FEEDBACK__ = {...} or () => {...} (may return a promise)
- *  3. a listener for the `agent-feedback:request-context` event that calls `event.detail.respond({...})`
+ *  1. <meta name="nitpick:KEY" content="VALUE">
+ *  2. window.__NITPICK__ = {...} or () => {...} (may return a promise)
+ *  3. a listener for the `nitpick:request-context` event that calls `event.detail.respond({...})`
  */
 export async function collectContext(): Promise<Record<string, unknown>> {
   const result: Record<string, unknown> = {};
-  document.querySelectorAll<HTMLMetaElement>('meta[name^="agent-feedback:"]').forEach((m) => {
-    result[m.name.slice('agent-feedback:'.length)] = m.content;
+  document.querySelectorAll<HTMLMetaElement>('meta[name^="nitpick:"]').forEach((m) => {
+    result[m.name.slice('nitpick:'.length)] = m.content;
   });
 
   try {
-    const global = (window as unknown as { __AGENT_FEEDBACK__?: unknown }).__AGENT_FEEDBACK__;
+    const global = (window as unknown as { __NITPICK__?: unknown }).__NITPICK__;
     const value = typeof global === 'function' ? await global() : global;
     if (value && typeof value === 'object') Object.assign(result, value);
   } catch (err) {
@@ -94,7 +98,7 @@ export async function collectContext(): Promise<Record<string, unknown>> {
   const respond = (data: unknown) => {
     if (data && typeof data === 'object') responses.push(data as Record<string, unknown>);
   };
-  window.dispatchEvent(new CustomEvent('agent-feedback:request-context', { detail: { respond } }));
+  window.dispatchEvent(new CustomEvent('nitpick:request-context', { detail: { respond } }));
   await new Promise((r) => setTimeout(r, 50));
   for (const r of responses) Object.assign(result, r);
 
@@ -104,13 +108,19 @@ export async function collectContext(): Promise<Record<string, unknown>> {
 
 /** Framework / headless-UI internals that tell an agent nothing about where the UI lives in code. */
 const FRAMEWORK_COMPONENT =
-  /^(Anonymous|Fragment|Suspense|StrictMode|Profiler|Provider|Consumer|Context|Slot|SlotClone|Slottable|Primitive|Presence|Portal|DismissableLayer|DismissableLayerBranch|FocusScope|FocusGuards|Popper|PopperAnchor|PopperContent|PopperArrow|VisuallyHidden|RemoveScroll|RemoveScrollBar|Collection.*|RovingFocus.*|Menu(Anchor|Portal|Content(Impl)?|RootContent.*)|ErrorBoundary|.*Boundary|.*Router|Router|AppRouter|ServerRoot|HotReload|ReactDevOverlay|RenderFromTemplateContext|ScrollAndFocusHandler|InnerScrollAndFocusHandler|Head|Root|AppContainer|PathnameContextProviderAdapter|SegmentViewNode|SegmentStateProvider|SegmentViewStateNode|ClientPageRoot|ClientSegmentRoot|LinkComponent)$/;
+  /^(Anonymous|Fragment|Suspense|StrictMode|Profiler|Provider|Consumer|Context|Slot|SlotClone|Slottable|Primitive|Presence|Portal|DismissableLayer|DismissableLayerBranch|FocusScope|FocusGuards|Popper|PopperAnchor|PopperContent|PopperArrow|VisuallyHidden|RemoveScroll|RemoveScrollBar|Collection.*|RovingFocus.*|Menu(Anchor|Portal|Content(Impl)?|RootContent.*)|ErrorBoundary|.*Boundary|.*Router|Router|AppRouter|ServerRoot|HotReload|ReactDevOverlay|RenderFromTemplateContext|ScrollAndFocusHandler|InnerScrollAndFocusHandler|Head|Root|AppContainer|PathnameContextProviderAdapter|SegmentViewNode|SegmentStateProvider|SegmentViewStateNode|ClientPageRoot|ClientSegmentRoot|LinkComponent|.*Context|.*Adapter|Location|Routes?|RenderedRoute|Outlet|Navigate|DataRoutes|RouterProvider)$/;
 
-/** Minifiers produce names like `E`, `l_`, `tN`, `og`. */
-const looksMinified = (name: string) => name.length <= 3 && !/^[A-Z][a-z]{2}$/.test(name);
+/**
+ * Minifiers produce names like `E`, `l_`, `tN`, `Jvt`. In dev builds short real names (`App`, `Nav`)
+ * are kept; in production builds every name of up to 3 characters is treated as minified.
+ */
+const looksMinified = (name: string, prod: boolean) => name.length <= 3 && (prod || !/^[A-Z][a-z]{2}$/.test(name));
 
-function isUsefulComponent(name: string): boolean {
-  if (looksMinified(name)) return false;
+/** React dev builds attach debug info to every fiber; production builds don't. */
+const isProdFiber = (f: object) => !('_debugOwner' in f) && !('_debugStack' in f) && !('_debugSource' in f);
+
+function isUsefulComponent(name: string, prod: boolean): boolean {
+  if (looksMinified(name, prod)) return false;
   // `Primitive.div`, `Primitive.button.Slot` (Radix), `FooProvider`, `withRouter(...)` style wrappers
   if (name.includes('.') || name.includes('(')) return false;
   if (name.endsWith('Provider')) return false;
@@ -140,10 +150,12 @@ export function inspectComponents(el: Element): ComponentInfo {
     const names: string[] = [];
     let depth = 0;
     let sawMinified = false;
-    for (let f: Fiber | null | undefined = (node as unknown as Record<string, Fiber>)[key]; f && names.length < 5 && depth < 300; f = f.return, depth++) {
+    const start = (node as unknown as Record<string, Fiber>)[key];
+    const prod = !!start && isProdFiber(start);
+    for (let f: Fiber | null | undefined = start; f && names.length < 5 && depth < 300; f = f.return, depth++) {
       const name = componentName(f.type);
-      if (name && looksMinified(name)) sawMinified = true;
-      if (name && isUsefulComponent(name) && names[0] !== name) names.unshift(name);
+      if (name && looksMinified(name, prod)) sawMinified = true;
+      if (name && isUsefulComponent(name, prod) && names[0] !== name) names.unshift(name);
     }
     return {
       components: names.length ? names : undefined,

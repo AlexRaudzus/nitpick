@@ -1,7 +1,7 @@
 /**
  * In-app variant of the feedback toolbar (no extension needed). Intended to be loaded lazily:
  *
- *   const { createFeedbackRecorder } = await import('agent-feedback/embed');
+ *   const { createFeedbackRecorder } = await import('nitpick/embed');
  *   const recorder = createFeedbackRecorder({ onComplete: (result) => openFeedbackModal(result) });
  *   await recorder.start(); // from a click handler ("Record")
  */
@@ -41,7 +41,7 @@ export interface RecorderOptions {
   dbName?: string;
 }
 
-const UI_TAG = 'agent-feedback-ui';
+const UI_TAG = 'nitpick-ui';
 /** Same isolation as the extension: the page must not see typing/clicks inside our UI. */
 const ISOLATED_EVENTS = ['keydown', 'keyup', 'keypress', 'pointerdown', 'mousedown', 'mouseup', 'focusin', 'focusout'];
 
@@ -84,7 +84,7 @@ export function createFeedbackRecorder(options: RecorderOptions) {
   store.subscribe(syncFlag);
 
   // Other tabs of the app write to the same IndexedDB: tell them to reload the state.
-  const channel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('agent-feedback') : null;
+  const channel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('nitpick') : null;
   const remoteListeners = new Set<(s: FeedbackSession | null) => void>();
   store.subscribe(() => channel?.postMessage('changed'));
   if (channel) {

@@ -3,8 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="agent-feedback:version" content="2.4.1" />
-    <meta name="agent-feedback:commit" content="a1b2c3d" />
+    <meta name="nitpick:version" content="2.4.1" />
+    <meta name="nitpick:commit" content="a1b2c3d" />
     <title>Test App – Einstellungen</title>
     <style>
       body { font: 15px system-ui, sans-serif; margin: 0; background: #f4f4f5; color: #18181b; }
@@ -47,9 +47,9 @@
     </div>
     <script>
       // Page-provided context: function form …
-      window.__AGENT_FEEDBACK__ = () => ({ userRole: 'admin', tenant: 'acme' });
+      window.__NITPICK__ = () => ({ userRole: 'admin', tenant: 'acme' });
       // … and event form
-      window.addEventListener('agent-feedback:request-context', (e) => e.detail.respond({ featureFlags: ['newSettings'] }));
+      window.addEventListener('nitpick:request-context', (e) => e.detail.respond({ featureFlags: ['newSettings'] }));
 
       // Fake a React fiber so component detection can be tested without bundling React
       const btn = document.querySelector('[data-testid=settings-save]');

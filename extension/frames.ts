@@ -12,7 +12,7 @@ import { startRecorder } from '@/core/ui/recorder';
 import { probeComponents } from './bridge-client';
 import { createExtensionHost } from './host';
 
-const SOURCE = 'agent-feedback-frames';
+const SOURCE = 'nitpick-frames';
 
 type Down = { source: typeof SOURCE; dir: 'down'; type: 'picker'; active: boolean };
 type Up = { source: typeof SOURCE; dir: 'up'; event: FrameEvent; frames: FrameInfo[]; url: string };

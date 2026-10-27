@@ -20,7 +20,7 @@ const fail = (msg) => {
 };
 const count = (page, n) =>
   page.waitForFunction(
-    (n) => document.querySelector('agent-feedback-ui')?.shadowRoot?.querySelector('.af-rec')?.textContent?.trim() === String(n),
+    (n) => document.querySelector('nitpick-ui')?.shadowRoot?.querySelector('.af-rec')?.textContent?.trim() === String(n),
     n,
   );
 
@@ -29,7 +29,7 @@ async function run(shots) {
   page.on('pageerror', (err) => fail(`[${shots}] page error: ${err.message}`));
   await page.goto(`http://localhost:5181/settings?shots=${shots}`);
   await page.click('#af-record');
-  const toolbar = page.locator('agent-feedback-ui .af-toolbar');
+  const toolbar = page.locator('nitpick-ui .af-toolbar');
   await toolbar.waitFor({ timeout: 5000 });
   const tab = await page.evaluate(() => window.__recorder.usesTabCapture);
   if ((shots === 'auto') !== tab) fail(`[${shots}] tab capture active=${tab}`);
@@ -42,11 +42,11 @@ async function run(shots) {
   await page.hover('[data-testid=settings-save]');
   await page.keyboard.down('Control');
   await page.keyboard.down('Alt');
-  await page.locator('agent-feedback-ui .af-highlight').waitFor({ timeout: 2000 });
+  await page.locator('nitpick-ui .af-highlight').waitFor({ timeout: 2000 });
   await page.click('[data-testid=settings-save]', { modifiers: ['Control', 'Alt'] });
   await page.keyboard.up('Alt');
   await page.keyboard.up('Control');
-  const composer = page.locator('agent-feedback-ui .af-composer textarea');
+  const composer = page.locator('nitpick-ui .af-composer textarea');
   await composer.fill('Label sollte "Speichern" heißen');
   await composer.press('Control+Enter');
   await count(page, 1);
@@ -75,7 +75,7 @@ async function run(shots) {
   await toolbar.getByRole('button', { name: 'Übernehmen' }).click();
   await page.locator('#af-modal[open]').waitFor({ timeout: 5000 });
   await page.screenshot({ path: join(out, `${shots}-modal.png`) });
-  if (await page.locator('agent-feedback-ui').count()) fail(`[${shots}] toolbar still mounted during hand-over`);
+  if (await page.locator('nitpick-ui').count()) fail(`[${shots}] toolbar still mounted during hand-over`);
 
   const result = await page.evaluate(async () => {
     const r = window.__lastResult;
@@ -111,11 +111,11 @@ async function run(shots) {
   await toolbar.getByRole('button', { name: 'Übernehmen' }).click();
   await page.click('#af-submit');
   await page.waitForTimeout(200);
-  const pending = await page.evaluate(() => localStorage.getItem('agent-feedback:pending'));
+  const pending = await page.evaluate(() => localStorage.getItem('nitpick:pending'));
   if (pending) fail(`[${shots}] session not cleared (${pending})`);
   await page.reload();
   await page.waitForTimeout(500);
-  if (await page.locator('agent-feedback-ui').count()) fail(`[${shots}] toolbar restored after clear`);
+  if (await page.locator('nitpick-ui').count()) fail(`[${shots}] toolbar restored after clear`);
   await page.close();
   console.log(`  [${shots}] ok – ${result.files.length} files`);
 }

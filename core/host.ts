@@ -14,6 +14,8 @@ export type HostCommand = 'pick' | 'export' | 'toggle-toolbar';
 /** Button shown in the toolbar once the session is finished (export, hand over to ticket, …). */
 export interface FinishAction {
   label: string;
+  /** Longer label in the export menu, e.g. "Markdown kopieren (ohne Screenshots)". */
+  menuLabel?: string;
   primary?: boolean;
   /**
    * Returns a message shown as toast. The first action is also bound to the export shortcut and may
@@ -48,7 +50,7 @@ export interface FeedbackHost {
   // Page access
   /** PNG data URL of the visible viewport. The caller hides the toolbar UI beforehand. */
   captureViewport(): Promise<string>;
-  /** Metadata the site provides (meta tags, window.__AGENT_FEEDBACK__, request-context event, …). */
+  /** Metadata the site provides (meta tags, window.__NITPICK__, request-context event, …). */
   requestContext(): Promise<Record<string, unknown>>;
   probeComponents(el: Element): Promise<ComponentInfo>;
   onPageEvent(cb: (event: PageEvent) => void): () => void;

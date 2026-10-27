@@ -79,7 +79,7 @@ describe('renderMarkdown', () => {
 describe('renderJson', () => {
   it('replaces asset ids with file paths', () => {
     const json = JSON.parse(renderJson(session));
-    expect(json.format).toBe('agent-feedback/v1');
+    expect(json.format).toBe('nitpick/v1');
     expect(json.comments[0].screenshots).toEqual({ crop: 'screenshots/01-crop.png', viewport: 'screenshots/01-viewport.png' });
     expect(assetFileNames(session).size).toBe(2);
   });

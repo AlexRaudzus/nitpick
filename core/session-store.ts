@@ -85,7 +85,7 @@ export function createSessionStore(kv: KVBackend) {
     },
 
     /** Starts a new session unless one is active. `page` is recorded as the first step. */
-    start(page?: { url: string; title?: string }): Promise<FeedbackSession> {
+    start(page?: { url: string; title?: string }, tabId?: number): Promise<FeedbackSession> {
       return serialized(async () => {
         const existing = await load();
         if (existing?.active) return existing;
@@ -96,6 +96,7 @@ export function createSessionStore(kv: KVBackend) {
           startedAt: Date.now(),
           active: true,
           hidden: prefs.hidden || undefined,
+          tabs: tabId != null ? [tabId] : undefined,
           comments: [],
           timeline: [],
           logs: [],
@@ -119,6 +120,13 @@ export function createSessionStore(kv: KVBackend) {
         s.active = true;
         s.endedAt = undefined;
       }),
+
+    async addTab(tabId: number) {
+      await mutate((s) => {
+        if (!s.tabs || s.tabs.includes(tabId)) return false;
+        s.tabs.push(tabId);
+      });
+    },
 
     /** Headless mode on/off; remembered for the next sessions. */
     async setHidden(hidden: boolean) {

@@ -14,19 +14,19 @@ export default defineContentScript({
   matchAboutBlank: true,
   async main(ctx) {
     // Exactly one live instance per tab: the manifest copy and a copy injected after install/update can meet.
-    const w = window as unknown as { __agentFeedbackContent?: { alive: () => boolean } };
-    if (w.__agentFeedbackContent?.alive()) return;
-    w.__agentFeedbackContent = { alive: () => !ctx.isInvalid };
+    const w = window as unknown as { __nitpickContent?: { alive: () => boolean } };
+    if (w.__nitpickContent?.alive()) return;
+    w.__nitpickContent = { alive: () => !ctx.isInvalid };
     if (window !== window.top) {
       startFrameAgent();
       return;
     }
     // UI left behind by an orphaned copy from a previous extension version
-    document.querySelectorAll('agent-feedback-ui').forEach((el) => el.remove());
+    document.querySelectorAll('nitpick-ui').forEach((el) => el.remove());
 
     const api = { ...createExtensionHost(), frames: createFrameBridge() };
     const ui = await createShadowRootUi(ctx, {
-      name: 'agent-feedback-ui',
+      name: 'nitpick-ui',
       position: 'overlay',
       zIndex: 2147483647,
       anchor: 'html',

@@ -74,4 +74,18 @@ describe('getContext', () => {
     expect(document.querySelector(b)).toBe(document.querySelectorAll('[data-slot=sidebar-item]')[1]);
     expect(b).not.toMatch(/\.(flex|w-|z-|gap)/);
   });
+
+  it('ignores generated ids and does not over-escape attribute values', async () => {
+    const { getCssSelector, describeElement } = await import('@/core/describe-element');
+    document.body.innerHTML = `
+      <form><h3><button id="radix-_r_13_" data-slot="accordion-trigger">English</button></h3>
+      <h3><button id="radix-_r_14_" data-slot="accordion-trigger">Deutsch</button></h3></form>
+      <nav><a href="/platform-state">Platform State</a></nav>`;
+    const btn = document.getElementById('radix-_r_13_')!;
+    const sel = getCssSelector(btn);
+    expect(sel).not.toContain('radix');
+    expect(document.querySelector(sel)).toBe(btn);
+    expect(describeElement(btn).id).toBeUndefined();
+    expect(getCssSelector(document.querySelector('a')!)).toBe('a[href="/platform-state"]');
+  });
 });

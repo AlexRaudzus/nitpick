@@ -34,14 +34,14 @@ try {
   const clickIcon = () =>
     sw.evaluate(async () => {
       const [tab] = await chrome.tabs.query({ url: 'http://localhost:5179/*' });
-      await globalThis.__agentFeedback.onActionClicked(tab);
+      await globalThis.__nitpick.onActionClicked(tab);
     });
   await clickIcon();
 
-  const toolbar = page.locator('agent-feedback-ui .af-toolbar');
+  const toolbar = page.locator('nitpick-ui .af-toolbar');
   await toolbar.waitFor({ timeout: 5000 }).catch(async (err) => {
     const hosts = await page.evaluate(() =>
-      [...document.querySelectorAll('agent-feedback-ui')].map((h) => h.shadowRoot?.innerHTML.slice(0, 120) ?? 'no shadow'),
+      [...document.querySelectorAll('nitpick-ui')].map((h) => h.shadowRoot?.innerHTML.slice(0, 120) ?? 'no shadow'),
     );
     const session = await sw.evaluate(async () => (await chrome.storage.local.get('session')).session?.active);
     throw new Error(`toolbar missing; session active=${session}; hosts=${JSON.stringify(hosts)}\n${err.message}`);
@@ -57,14 +57,14 @@ try {
   await page.hover('[data-testid=settings-save]');
   await page.keyboard.down('Control');
   await page.keyboard.down('Alt');
-  await page.locator('agent-feedback-ui .af-highlight').waitFor({ timeout: 2000 });
+  await page.locator('nitpick-ui .af-highlight').waitFor({ timeout: 2000 });
   await page.click('[data-testid=settings-save]', { modifiers: ['Control', 'Alt'] });
   await page.keyboard.up('Alt');
   await page.keyboard.up('Control');
-  const composer = page.locator('agent-feedback-ui .af-composer textarea');
+  const composer = page.locator('nitpick-ui .af-composer textarea');
   await composer.fill('Label sollte "Speichern" heißen statt "Submit"');
   await composer.press('Control+Enter');
-  await page.locator('agent-feedback-ui .af-pin').first().waitFor({ timeout: 5000 });
+  await page.locator('nitpick-ui .af-pin').first().waitFor({ timeout: 5000 });
 
   // Releasing the keys returns to normal operation: this click must navigate
   await page.click('text=Benutzer');
@@ -81,12 +81,12 @@ try {
   await composer.press('Control+Enter');
   // only the region pin belongs to /users; the element pin stays on /settings
   await page.waitForFunction(() =>
-    document.querySelector('agent-feedback-ui')?.shadowRoot?.querySelector('.af-rec')?.textContent?.includes('2'),
+    document.querySelector('nitpick-ui')?.shadowRoot?.querySelector('.af-rec')?.textContent?.includes('2'),
   );
 
   // 3) General note from the drawer that opens on hover
   await toolbar.getByRole('button', { name: 'Notiz' }).hover();
-  const note = page.locator('agent-feedback-ui .af-drawer.af-open textarea');
+  const note = page.locator('nitpick-ui .af-drawer.af-open textarea');
   await note.waitFor({ timeout: 2000 });
   await page.waitForTimeout(300); // let the animation finish for the screenshot
   await page.screenshot({ path: join(out, 'drawer-note.png') });
@@ -94,7 +94,7 @@ try {
   // No save button: hovering over "Liste" switches the drawer and must not lose the text
   await toolbar.getByRole('button', { name: 'Liste' }).hover();
   await page.waitForFunction(() =>
-    document.querySelector('agent-feedback-ui')?.shadowRoot?.querySelector('.af-rec')?.textContent?.includes('3'),
+    document.querySelector('nitpick-ui')?.shadowRoot?.querySelector('.af-rec')?.textContent?.includes('3'),
   );
   // Reopening shows the note; further edits update it in place (no second comment)
   await toolbar.getByRole('button', { name: 'Notiz' }).hover();
@@ -102,8 +102,9 @@ try {
   if ((await note.inputValue()) !== 'Seite lädt') fail(`note not restored: "${await note.inputValue()}"`);
   await note.fill('Seite lädt insgesamt langsam');
   await page.waitForTimeout(900);
+  // Leaving the toolbar closes the drawer, even though the note field had focus
   await page.mouse.move(100, 100);
-  await page.waitForTimeout(500);
+  await page.locator('nitpick-ui .af-drawer.af-open').waitFor({ state: 'detached', timeout: 2000 });
 
   await page.screenshot({ path: join(out, 'page-with-pins.png') });
   // 3b) Element inside a cross-origin iframe, picked by holding Ctrl+Alt
@@ -121,7 +122,7 @@ try {
   await page.screenshot({ path: join(out, 'iframe-composer.png') });
   await composer.press('Control+Enter');
   await page.waitForFunction(() =>
-    document.querySelector('agent-feedback-ui')?.shadowRoot?.querySelector('.af-rec')?.textContent?.includes('4'),
+    document.querySelector('nitpick-ui')?.shadowRoot?.querySelector('.af-rec')?.textContent?.includes('4'),
   );
 
   // 4) One-shot pick via "+ Kommentar" ends after one element
@@ -130,18 +131,61 @@ try {
   await composer.fill('Überschrift zu groß');
   await composer.press('Control+Enter');
   await page.waitForFunction(() =>
-    document.querySelector('agent-feedback-ui')?.shadowRoot?.querySelector('.af-rec')?.textContent?.includes('5'),
+    document.querySelector('nitpick-ui')?.shadowRoot?.querySelector('.af-rec')?.textContent?.includes('5'),
   );
   await page.click('text=Einstellungen');
   await page.waitForURL('**/settings');
 
   await toolbar.getByRole('button', { name: 'Liste' }).hover();
-  await page.locator('agent-feedback-ui .af-drawer.af-open .af-item').first().waitFor({ timeout: 2000 });
+  await page.locator('nitpick-ui .af-drawer.af-open .af-item').first().waitFor({ timeout: 2000 });
   await page.waitForTimeout(300);
   await page.screenshot({ path: join(out, 'drawer-list.png') });
+  // Drag the toolbar out of the way (to the upper left); the position survives a reload
+  const dockBox = async () => page.locator('nitpick-ui .af-toolbar').boundingBox();
+  const before = await dockBox();
+  const grip = await page.locator('nitpick-ui .af-grip').boundingBox();
+  await page.mouse.move(grip.x + 4, grip.y + 8);
+  await page.mouse.down();
+  await page.mouse.move(grip.x - 500, grip.y - 500, { steps: 8 });
+  await page.mouse.up();
+  const after = await dockBox();
+  if (!(after.x < before.x - 400 && after.y < before.y - 400)) fail(`toolbar not dragged: ${JSON.stringify({ before, after })}`);
+  await toolbar.getByRole('button', { name: 'Liste' }).hover();
+  await page.locator('nitpick-ui .af-drawer.af-open .af-item').first().waitFor({ timeout: 2000 });
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: join(out, 'dragged.png') });
+  await page.reload();
+  await toolbar.waitFor({ timeout: 5000 });
+  const reloaded = await dockBox();
+  if (Math.abs(reloaded.y - after.y) > 2) fail(`toolbar position not restored: ${after.y} → ${reloaded.y}`);
+  await page.locator('nitpick-ui .af-grip').dblclick();
+  await page.mouse.move(10, 400);
+
+  // Another tab that has nothing to do with the session must not end up in the timeline
+  const other = await ctx.newPage();
+  await other.goto('http://localhost:5179/other');
+  await other.waitForTimeout(500);
+  await other.fill('#name', 'OTHER-TAB');
+  await other.click('#broken');
+  await other.waitForTimeout(300);
+  await other.close();
+  await page.bringToFront();
+
   await toolbar.getByRole('button', { name: 'Fertig' }).click();
   await toolbar.getByRole('button', { name: 'Exportieren' }).waitFor();
   await page.screenshot({ path: join(out, 'stopped.png') });
+  await toolbar.getByRole('button', { name: 'Weitere Export-Optionen' }).click();
+  await page.locator('nitpick-ui .af-menu [role=menuitem]').filter({ hasText: 'Markdown kopieren' }).waitFor({ timeout: 2000 });
+  await page.screenshot({ path: join(out, 'export-menu.png') });
+  await page.keyboard.press('Escape');
+  await page.locator('nitpick-ui .af-menu').waitFor({ state: 'detached', timeout: 2000 });
+  // Discarding asks in place of the whole row; cancelling brings the actions back
+  await toolbar.getByRole('button', { name: 'Verwerfen' }).click();
+  await toolbar.getByText('Alle 5 Kommentare verwerfen?').waitFor({ timeout: 2000 });
+  if (await toolbar.getByRole('button', { name: 'Fortsetzen' }).count()) fail('Fortsetzen visible while confirming discard');
+  await page.screenshot({ path: join(out, 'discard-confirm.png') });
+  await toolbar.getByRole('button', { name: 'Abbrechen' }).click();
+  await toolbar.getByRole('button', { name: 'Exportieren' }).waitFor({ timeout: 2000 });
 
   // Read results through an extension page
   const ext = await ctx.newPage();
@@ -183,13 +227,14 @@ try {
   ];
   for (const [name, needle] of checks) if (!md.includes(needle)) fail(`${name}: missing "${needle}"`);
   if (md.includes('super-secret')) fail('password leaked');
+  if (md.includes('OTHER-TAB') || md.includes('/other')) fail('unrelated tab recorded');
   if (md.includes('now on 127.0.0.1')) fail('iframe event treated as origin change');
   if (/click (div|main|html)\b/.test(md)) fail('noise click recorded');
   const ownUiOnTop = await page.evaluate(() => {
-    const r = document.querySelector('agent-feedback-ui').shadowRoot.querySelector('.af-toolbar').getBoundingClientRect();
+    const r = document.querySelector('nitpick-ui').shadowRoot.querySelector('.af-toolbar').getBoundingClientRect();
     return document.elementFromPoint(r.left + 10, r.top + 10)?.tagName.toLowerCase();
   });
-  if (ownUiOnTop !== 'agent-feedback-ui') fail(`toolbar covered by ${ownUiOnTop}`);
+  if (ownUiOnTop !== 'nitpick-ui') fail(`toolbar covered by ${ownUiOnTop}`);
   if (!result.exp.ok) fail(`export failed: ${result.exp.error}`);
   else console.log(`  export path: ${result.exp.data.path} (copied: ${result.exp.data.copied})`);
   if (result.exp.ok && !result.exp.data.copied) fail('export path not copied to clipboard');
@@ -197,14 +242,14 @@ try {
   // Headless mode: icon starts a fresh session, Ctrl+Alt+H hides the toolbar, Ctrl+Alt+E exports and restarts
   const stored = () => sw.evaluate(async () => (await chrome.storage.local.get('session')).session);
   await sw.evaluate(() => chrome.storage.local.remove('session'));
-  await page.waitForFunction(() => !document.querySelector('agent-feedback-ui')?.shadowRoot?.querySelector('.af-toolbar'));
+  await page.waitForFunction(() => !document.querySelector('nitpick-ui')?.shadowRoot?.querySelector('.af-toolbar'));
   await clickIcon();
   await toolbar.waitFor({ timeout: 5000 });
   const badge = await sw.evaluate(() => chrome.action.getBadgeText({}));
   if (badge !== '0') fail(`badge "${badge}" instead of "0"`);
   await page.keyboard.down('Control');
   await page.keyboard.down('Alt');
-  await page.locator('agent-feedback-ui .af-keys').waitFor({ timeout: 2000 });
+  await page.locator('nitpick-ui .af-keys').waitFor({ timeout: 2000 });
   await page.screenshot({ path: join(out, 'shortcut-hint.png') });
   await page.keyboard.press('KeyH');
   await toolbar.waitFor({ state: 'detached', timeout: 2000 });
@@ -213,7 +258,7 @@ try {
   await page.keyboard.up('Control');
   await composer.fill('Headless-Kommentar');
   await composer.press('Control+Enter');
-  const toast = page.locator('agent-feedback-ui .af-toast');
+  const toast = page.locator('nitpick-ui .af-toast');
   await toast.filter({ hasText: 'Kommentar 1 gespeichert' }).waitFor({ timeout: 5000 });
   await page.screenshot({ path: join(out, 'headless.png') });
   // Ctrl+Alt+N opens the page note without a toolbar; typing goes straight into it

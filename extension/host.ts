@@ -39,6 +39,7 @@ export function createExtensionHost(): FeedbackHost {
     finishActions: [
       {
         label: 'Exportieren',
+        menuLabel: 'Als Dateien (Ordner mit Screenshots)',
         primary: true,
         async run() {
           const res = await send({ type: 'export:folder' });
@@ -48,6 +49,7 @@ export function createExtensionHost(): FeedbackHost {
       },
       {
         label: 'Markdown kopieren',
+        menuLabel: 'Markdown kopieren (ohne Screenshots)',
         async run() {
           const md = await send({ type: 'export:markdown' });
           return (await send({ type: 'clipboard:copy', text: md })) ? 'Markdown kopiert (ohne Screenshots)' : 'Kopieren fehlgeschlagen';

@@ -67,8 +67,8 @@ export function handle(
 }
 
 /** Messages between the page-world bridge and the isolated content script (window.postMessage). */
-export const BRIDGE_SOURCE = 'agent-feedback-bridge';
-export const CONTENT_SOURCE = 'agent-feedback-content';
+export const BRIDGE_SOURCE = 'nitpick-bridge';
+export const CONTENT_SOURCE = 'nitpick-content';
 
 export type BridgeToContent =
   | PageEvent

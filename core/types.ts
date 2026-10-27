@@ -88,6 +88,11 @@ export interface FeedbackSession {
   active: boolean;
   /** Headless mode: toolbar hidden, everything via shortcuts. */
   hidden?: boolean;
+  /**
+   * Extension: browser tabs that belong to the session (started or commented there, or opened from
+   * such a tab). Steps and logs from other tabs are ignored.
+   */
+  tabs?: number[];
   comments: FeedbackComment[];
   timeline: TimelineEvent[];
   logs: LogEntry[];

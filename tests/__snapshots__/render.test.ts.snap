@@ -3,7 +3,7 @@
 exports[`renderMarkdown > renders the snapshot 1`] = `
 "# UI feedback — localhost:3000
 
-> Collected with agent-feedback while clicking through the app. Each numbered item below is one piece of
+> Collected with Nitpick while clicking through the app. Each numbered item below is one piece of
 > feedback. Locate the UI in code via test id / component / selector, use the screenshots for visual context
 > (the viewport screenshot has a numbered marker), and check the timeline for how the state was reached.
 > Structured data for all items: \`feedback.json\`.

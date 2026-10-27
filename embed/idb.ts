@@ -17,7 +17,7 @@ function done(tx: IDBTransaction): Promise<void> {
 }
 
 /** Key-value store in IndexedDB; survives reloads and has no 5 MB limit like localStorage. */
-export function createIdbBackend(dbName = 'agent-feedback'): KVBackend {
+export function createIdbBackend(dbName = 'nitpick'): KVBackend {
   let db: Promise<IDBDatabase> | undefined;
   const open = () => {
     db ??= new Promise((resolve, reject) => {

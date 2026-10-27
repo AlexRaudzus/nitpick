@@ -3,11 +3,11 @@ import { defineConfig } from 'wxt';
 export default defineConfig({
   modules: ['@wxt-dev/module-react'],
   manifest: {
-    name: 'Agent Feedback',
+    name: 'Nitpick',
     description: 'Comment on UI elements, capture screenshots and export feedback for coding agents.',
     permissions: ['storage', 'unlimitedStorage', 'downloads', 'tabs', 'activeTab', 'scripting', 'offscreen', 'clipboardWrite', 'contextMenus'],
     // No popup: a click on the icon starts the session / shows or hides the toolbar (see background).
-    action: { default_title: 'Agent Feedback' },
+    action: { default_title: 'Nitpick' },
     host_permissions: ['<all_urls>'],
     commands: {
       _execute_action: {
