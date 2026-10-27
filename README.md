@@ -10,6 +10,8 @@ Zwei Varianten mit demselben Kern:
 
 > Status: experimentell, nicht im Chrome Web Store. Installation aus dem Quellcode.
 
+Stark inspiriert von [Agentation](https://agentation.dev) von Benji Taylor. Nitpick übernimmt die Idee, UI-Feedback direkt am Element für Agents aufzubereiten, setzt sie aber als Browser-Extension um, die nicht ins App-Bundle muss. Code wurde nicht übernommen.
+
 ## Installation
 
 Voraussetzungen: Node.js 22+ und pnpm.
