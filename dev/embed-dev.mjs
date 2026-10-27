@@ -1,5 +1,5 @@
 // Dev server for the in-app variant: the test page plus a "Feedback aufnehmen" button that loads
-// embed/index.ts through Vite (HMR). Simulates the management feedback modal on hand-over.
+// embed/index.ts through Vite (HMR). Simulates an app's feedback modal on hand-over.
 // Usage: pnpm dev:embed → http://localhost:5180/settings
 import { createServer } from 'vite';
 import { readFileSync } from 'node:fs';
@@ -11,7 +11,7 @@ const port = Number(process.env.PORT ?? 5180);
 const shell = `
 <button id="af-record" style="position:fixed;left:16px;bottom:16px;z-index:10;padding:8px 14px">Feedback aufnehmen</button>
 <dialog id="af-modal" style="width:min(720px,90vw)">
-  <h2>Feedback (Management-Modal, Demo)</h2>
+  <h2>Feedback-Modal (Demo)</h2>
   <div id="af-images" style="display:flex;gap:8px;flex-wrap:wrap"></div>
   <pre id="af-md" style="max-height:40vh;overflow:auto;white-space:pre-wrap;font-size:12px"></pre>
   <button id="af-cancel">Abbrechen</button>

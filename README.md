@@ -4,7 +4,7 @@ UI-Feedback für Coding-Agents sammeln: durch die App klicken, Elemente oder Ber
 
 Zwei Varianten mit demselben Kern:
 - **Browser-Extension** (Chrome/Chromium, MV3) für die Entwicklung. Website-agnostisch, nichts landet im Bundle der App.
-- **Embed** für die Einbindung in eine App, z. B. Management. Kunden brauchen dann keine Extension; das Ergebnis geht direkt ins Feedback-Modal bzw. ins Ticket. Siehe [In-App-Variante](#in-app-variante-embed).
+- **Embed** für die Einbindung in die eigene App. Kunden brauchen dann keine Extension; das Ergebnis geht direkt ins Feedback-Modal bzw. ins Ticket. Siehe [In-App-Variante](#in-app-variante-embed).
 
 ## Installation
 
@@ -159,7 +159,7 @@ Unterschiede zur Extension:
 - **Kein Origin-Wechsel:** Die Session lebt pro Origin. Login-Redirects auf eine andere Domain landen nicht in der Timeline.
 - Die Metadaten-Quellen von unten gelten auch hier. Zusätzlich gibt es die `context`-Option.
 
-Lokal ausprobieren: `pnpm dev:embed` → http://localhost:5180/settings (mit simuliertem Management-Modal).
+Lokal ausprobieren: `pnpm dev:embed` → http://localhost:5180/settings (mit simuliertem Feedback-Modal).
 
 ## Entwicklung
 
@@ -195,6 +195,5 @@ Aufbau:
 
 ## Roadmap
 
-- Einbindung in Management: Record-Button im Feedback-Popover, Upload der Screenshots, Linear-Ticket pro Session
+- Beispiel-Integration: Record-Button im Feedback-Popover einer App, Upload der Screenshots, ein Linear-Ticket pro Session
 - Video: in der Extension per `tabCapture`, im Embed über den ohnehin offenen `getDisplayMedia`-Stream
-- Umzug ins qualitatio-Monorepo
