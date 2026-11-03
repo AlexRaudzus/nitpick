@@ -22,6 +22,11 @@ function dataUrl(mime: string, text: string): string {
 
 async function copyToClipboard(text: string): Promise<boolean> {
   try {
+    // Firefox has no offscreen API, but its background is an event page with DOM access.
+    if (import.meta.env.FIREFOX) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
     if (!(await browser.offscreen.hasDocument())) {
       await browser.offscreen.createDocument({
         url: '/offscreen.html',
@@ -49,8 +54,8 @@ async function downloadedPath(id: number): Promise<string | undefined> {
 const pageOf = (tab?: Browser.tabs.Tab) => (tab?.url?.startsWith('http') ? { url: tab.url, title: tab.title } : undefined);
 
 /**
- * Writes the export folder. Exporting a running session (shortcut) is a checkpoint: a fresh session
- * starts right away so feedback collection never stops.
+ * Writes the export folder and clears the session. Exporting a running session (shortcut) is a
+ * checkpoint: a fresh session starts right away so feedback collection never stops.
  */
 async function exportFolder(tab?: Browser.tabs.Tab) {
   const bundle = await store.bundle();
@@ -61,6 +66,11 @@ async function exportFolder(tab?: Browser.tabs.Tab) {
     { name: 'feedback.json', url: dataUrl('application/json', bundle.json) },
     ...bundle.assets.map((a) => ({ name: a.name, url: a.dataUrl })),
   ];
+  // Firefox refuses data: URLs in downloads.download; its event page can hand out blob: URLs instead.
+  // (Chrome's service worker has no URL.createObjectURL, so it keeps the data: URLs.)
+  if (import.meta.env.FIREFOX) {
+    for (const f of files) f.url = URL.createObjectURL(await (await fetch(f.url)).blob());
+  }
   const ids: number[] = [];
   for (const f of files) {
     ids.push(
@@ -72,15 +82,15 @@ async function exportFolder(tab?: Browser.tabs.Tab) {
       }),
     );
   }
+  if (import.meta.env.FIREFOX) setTimeout(() => files.forEach((f) => URL.revokeObjectURL(f.url)), 60_000);
   // Put the absolute folder path on the clipboard, ready to paste into the agent.
   const mdPath = ids[0] != null ? await downloadedPath(ids[0]) : undefined;
   const path = mdPath?.replace(/[\\/]feedback(?: \(\d+\))?\.md$/, '');
   const copied = path ? await copyToClipboard(path) : false;
+  // The export concludes the session: it is cleared, and a running one restarts right away.
   const restarted = bundle.session.active;
-  if (restarted) {
-    await store.discard();
-    await store.start(pageOf(tab), tab?.id);
-  }
+  await store.discard();
+  if (restarted) await store.start(pageOf(tab), tab?.id);
   return { folder, path, files: files.length, copied, restarted };
 }
 

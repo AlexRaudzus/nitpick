@@ -53,7 +53,7 @@ export function App({ host, api }: { host: HTMLElement; api: FeedbackHost }) {
   // Render in the browser's top layer so we stay above any z-index, modal or popover of the page.
   useLayoutEffect(() => {
     const root = rootRef.current;
-    if (!root || !session) return;
+    if (!root || !(session || toast)) return;
     const raise = () => {
       if (!root.isConnected) return;
       try {
@@ -84,7 +84,7 @@ export function App({ host, api }: { host: HTMLElement; api: FeedbackHost }) {
       document.removeEventListener('toggle', schedule, true);
       document.removeEventListener('fullscreenchange', schedule);
     };
-  }, [!!session, host]);
+  }, [!!session, !!toast, host]);
 
   const isOwnUi = useCallback((ev: Event) => ev.composedPath().includes(host), [host]);
 
@@ -444,7 +444,13 @@ export function App({ host, api }: { host: HTMLElement; api: FeedbackHost }) {
     }
   };
 
-  if (!session) return null;
+  // The toast outlives the session, e.g. the export message after an export discarded it.
+  if (!session)
+    return toast ? (
+      <div className="af-root" ref={rootRef} popover="manual">
+        <div className="af-toast">{toast}</div>
+      </div>
+    ) : null;
   // Headless mode only applies while recording; a finished session always shows its actions.
   const hidden = session.active && !!session.hidden;
 

@@ -60,7 +60,8 @@ export function handle(
   browser.runtime.onMessage.addListener((req, sender, sendResponse) => {
     handler(req as Request, sender).then(
       (data) => sendResponse({ ok: true, data: data ?? null }),
-      (err: unknown) => sendResponse({ ok: false, error: err instanceof Error ? err.message : String(err) }),
+      // Capped: browser errors can quote whole data: URLs, which would flood the toast.
+      (err: unknown) => sendResponse({ ok: false, error: (err instanceof Error ? err.message : String(err)).slice(0, 300) }),
     );
     return true;
   });

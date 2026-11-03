@@ -8,6 +8,8 @@
     "dev": "wxt",
     "build": "wxt build",
     "zip": "wxt zip",
+    "build:firefox": "wxt build -b firefox --mv3",
+    "zip:firefox": "wxt zip -b firefox --mv3",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "postinstall": "wxt prepare",

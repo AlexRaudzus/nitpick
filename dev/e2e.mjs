@@ -187,15 +187,24 @@ try {
   await toolbar.getByRole('button', { name: 'Abbrechen' }).click();
   await toolbar.getByRole('button', { name: 'Exportieren' }).waitFor({ timeout: 2000 });
 
+  // Checked before the export, which clears the session and with it the toolbar
+  const ownUiOnTop = await page.evaluate(() => {
+    const r = document.querySelector('nitpick-ui').shadowRoot.querySelector('.af-toolbar').getBoundingClientRect();
+    return document.elementFromPoint(r.left + 10, r.top + 10)?.tagName.toLowerCase();
+  });
+  if (ownUiOnTop !== 'nitpick-ui') fail(`toolbar covered by ${ownUiOnTop}`);
+
   // Read results through an extension page
   const ext = await ctx.newPage();
   await ext.goto(`chrome-extension://${extId}/offscreen.html`);
   const result = await ext.evaluate(async () => {
     const md = await chrome.runtime.sendMessage({ type: 'export:markdown' });
-    const exp = await chrome.runtime.sendMessage({ type: 'export:folder' });
     const all = await chrome.storage.local.get(null);
     const assets = Object.entries(all).filter(([k]) => k.startsWith('asset:'));
-    return { md: md.data, exp, assets: Object.fromEntries(assets), session: all.session };
+    // The export clears the session, so read storage first
+    const exp = await chrome.runtime.sendMessage({ type: 'export:folder' });
+    const after = await chrome.storage.local.get('session');
+    return { md: md.data, exp, assets: Object.fromEntries(assets), session: all.session, cleared: !after.session };
   });
   writeFileSync(join(out, 'feedback.md'), result.md);
   for (const c of result.session.comments) {
@@ -230,14 +239,10 @@ try {
   if (md.includes('OTHER-TAB') || md.includes('/other')) fail('unrelated tab recorded');
   if (md.includes('now on 127.0.0.1')) fail('iframe event treated as origin change');
   if (/click (div|main|html)\b/.test(md)) fail('noise click recorded');
-  const ownUiOnTop = await page.evaluate(() => {
-    const r = document.querySelector('nitpick-ui').shadowRoot.querySelector('.af-toolbar').getBoundingClientRect();
-    return document.elementFromPoint(r.left + 10, r.top + 10)?.tagName.toLowerCase();
-  });
-  if (ownUiOnTop !== 'nitpick-ui') fail(`toolbar covered by ${ownUiOnTop}`);
   if (!result.exp.ok) fail(`export failed: ${result.exp.error}`);
   else console.log(`  export path: ${result.exp.data.path} (copied: ${result.exp.data.copied})`);
   if (result.exp.ok && !result.exp.data.copied) fail('export path not copied to clipboard');
+  if (result.exp.ok && !result.cleared) fail('session not cleared after export');
   if (Object.keys(result.assets).length !== 9) fail(`expected 9 screenshots, got ${Object.keys(result.assets).length}`);
   // Headless mode: icon starts a fresh session, Ctrl+Alt+H hides the toolbar, Ctrl+Alt+E exports and restarts
   const stored = () => sw.evaluate(async () => (await chrome.storage.local.get('session')).session);

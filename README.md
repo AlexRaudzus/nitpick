@@ -5,14 +5,23 @@ UI-Feedback für Coding-Agents: durch die App klicken, Elemente oder Bereiche ko
 ![Nitpick-Toolbar mit Kommentarliste](docs/screenshot.png)
 
 Zwei Varianten mit demselben Kern:
-- **Browser-Extension** (Chrome/Chromium, MV3) für die Entwicklung. Funktioniert auf jeder Website, nichts landet im Bundle der App.
+- **Browser-Extension** (Chrome/Chromium und Firefox, MV3) für die Entwicklung. Funktioniert auf jeder Website, nichts landet im Bundle der App.
 - **Embed** zum Einbinden in die eigene App. Nutzer brauchen dann keine Extension, und das Ergebnis geht direkt in ein Feedback-Formular oder Ticket. Siehe [In-App-Variante](#in-app-variante-embed).
 
-> Status: experimentell, nicht im Chrome Web Store. Installation aus dem Quellcode.
+> Status: experimentell, nicht im Chrome Web Store oder bei Firefox Add-ons. Fertige Builds gibt es unter [Releases](https://github.com/AlexRaudzus/nitpick/releases), alternativ aus dem Quellcode bauen.
 
 Stark inspiriert von [Agentation](https://agentation.dev) von Benji Taylor. Nitpick übernimmt die Idee, UI-Feedback direkt am Element für Agents aufzubereiten, setzt sie aber als Browser-Extension um, die nicht ins App-Bundle muss. Code wurde nicht übernommen.
 
 ## Installation
+
+### Aus einem Release
+
+Unter [Releases](https://github.com/AlexRaudzus/nitpick/releases) das Zip für den eigenen Browser herunterladen.
+
+- **Chrome:** Zip entpacken, `chrome://extensions` öffnen, den Entwicklermodus einschalten, **Entpackte Erweiterung laden** wählen und den entpackten Ordner auswählen.
+- **Firefox:** `about:debugging#/runtime/this-firefox` öffnen, **Temporäres Add-on laden…** wählen und das Zip auswählen. Das Add-on bleibt bis zum Neustart von Firefox geladen. Danach unter `about:addons` → Nitpick → Berechtigungen den Zugriff auf alle Websites erlauben.
+
+### Aus dem Quellcode
 
 Voraussetzungen: Node.js 22+ und pnpm.
 
@@ -25,6 +34,8 @@ pnpm build
 
 Dann in Chrome `chrome://extensions` öffnen, den Entwicklermodus einschalten, **Entpackte Erweiterung laden** wählen und `.output/chrome-mv3` auswählen.
 
+Für Firefox `pnpm build:firefox` ausführen und `.output/firefox-mv3/manifest.json` wie oben als temporäres Add-on laden.
+
 ## Nutzung
 
 1. **Klick aufs Extension-Icon** (oder `Alt+Shift+F`) startet eine Session. Bei laufender Session blendet derselbe Klick die Toolbar ein oder aus, eine beendete Session setzt er fort. Das Badge am Icon zeigt die Anzahl der Kommentare.
@@ -35,7 +46,7 @@ Dann in Chrome `chrome://extensions` öffnen, den Entwicklermodus einschalten, *
    - **Bereich** – ein Rechteck aufziehen und kommentieren
    - **⠿** – Toolbar verschieben, z. B. um Elemente dahinter auszuwählen. Die Position wird pro Website gemerkt, ein Doppelklick setzt sie zurück.
    - **⌄** – Toolbar ausblenden (Headless-Modus)
-4. **Fertig** → **Exportieren** schreibt nach `~/Downloads/nitpick/<datum>_<uhrzeit>_<host>/` und legt den Ordnerpfad in die Zwischenablage. Über den Pfeil daneben lässt sich alternativ nur das Markdown kopieren.
+4. **Fertig** → **Exportieren** schreibt nach `~/Downloads/nitpick/<datum>_<uhrzeit>_<host>/` und legt den Ordnerpfad in die Zwischenablage. Danach ist die Session abgeschlossen und geleert. Über den Pfeil daneben lässt sich alternativ nur das Markdown kopieren.
 
 Kommentare, Timeline und Console-Errors bleiben über Navigationen, Reloads und Login-Redirects auf andere Domains hinweg erhalten. Aufgezeichnet wird nur der Tab, in dem die Session läuft, und Tabs, die daraus geöffnet oder kommentiert werden. Elemente in iframes lassen sich ebenfalls auswählen, auch bei anderer Domain.
 
