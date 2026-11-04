@@ -331,6 +331,55 @@ try {
   if (importedShots !== Object.keys(result.assets).length) fail(`import: ${importedShots} screenshots instead of ${Object.keys(result.assets).length}`);
   await page.screenshot({ path: join(out, 'imported.png') });
 
+  // Page parameters: a route mirrored into the query is suggested, and only applied once chosen
+  const pins = page.locator('nitpick-ui .af-pin');
+  const pinsHere = await pins.count();
+  if (!pinsHere) fail('no markers for the imported comments on this page');
+  await page.evaluate(() => history.pushState(null, '', '?_route=%2Fteams%2Fproblems'));
+  const suggest = page.locator('nitpick-ui .af-suggest');
+  await suggest.filter({ hasText: '_route' }).waitFor({ timeout: 2000 });
+  if ((await pins.count()) !== pinsHere) fail('page params applied before the user chose them');
+  await page.screenshot({ path: join(out, 'page-params-suggest.png') });
+  await suggest.getByRole('button', { name: 'Trennen' }).click();
+  await suggest.waitFor({ state: 'detached', timeout: 2000 });
+  await pins.first().waitFor({ state: 'detached', timeout: 2000 });
+  await page.evaluate(() => history.pushState(null, '', location.pathname));
+  await pins.first().waitFor({ timeout: 2000 });
+  // The "…" menu lets the user take it back
+  await page.evaluate(() => history.pushState(null, '', '?_route=%2Fteams%2Fproblems'));
+  await pins.first().waitFor({ state: 'detached', timeout: 2000 });
+  await toolbar.getByRole('button', { name: 'Weitere Aktionen' }).click();
+  await page.locator('nitpick-ui .af-menu').getByRole('menuitem', { name: 'Seiten unterscheiden nach…' }).click();
+  const routeBox = page.locator('nitpick-ui .af-param').filter({ hasText: '_route' }).locator('input');
+  if (!(await routeBox.isChecked())) fail('_route not checked in the page params drawer');
+  await page.screenshot({ path: join(out, 'page-params-drawer.png') });
+  await routeBox.uncheck();
+  await pins.first().waitFor({ timeout: 2000 });
+  if ((await pins.count()) !== pinsHere) fail(`expected ${pinsHere} markers after unchecking, got ${await pins.count()}`);
+  if (await suggest.count()) fail('suggestion shown again after the user decided');
+
+  // The page under each comment links there (full navigation; the session survives it)
+  await page.mouse.move(10, 10);
+  const pageLink = page.locator('nitpick-ui a.af-item-page[href*="/users"]').first();
+  await pageLink.waitFor({ timeout: 2000 });
+  await page.screenshot({ path: join(out, 'page-links.png') });
+  await pageLink.click();
+  await page.waitForURL(/\/users$/, { timeout: 5000 });
+  await toolbar.getByRole('button', { name: 'Fortsetzen' }).waitFor({ timeout: 5000 });
+  await page.locator('nitpick-ui .af-item-here .af-here').first().waitFor({ timeout: 2000 });
+  // Hovering a marker previews its comment next to it
+  await page.mouse.move(10, 10);
+  const firstPin = page.locator('nitpick-ui .af-pin').first();
+  await firstPin.hover();
+  const preview = page.locator('nitpick-ui .af-preview');
+  await preview.waitFor({ timeout: 2000 });
+  const pinLabel = await firstPin.textContent();
+  const listed = await page.locator('nitpick-ui .af-item').filter({ has: page.locator('.af-badge', { hasText: new RegExp(`^${pinLabel}$`) }) }).locator('.af-item-text').textContent();
+  if (!(await preview.textContent()).includes(listed)) fail(`marker preview does not show comment ${pinLabel}`);
+  await page.screenshot({ path: join(out, 'marker-preview.png') });
+  await page.mouse.move(10, 10);
+  await preview.waitFor({ state: 'detached', timeout: 2000 });
+
   if (!process.exitCode) console.log(`✓ e2e passed – ${result.exp.data.files} files exported, artifacts in test-results/`);
 } catch (err) {
   fail(err.stack ?? String(err));

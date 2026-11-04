@@ -6,6 +6,7 @@ import type { CommentKind, ElementDescriptor, FeedbackComment, FeedbackSession, 
 import { captureScreenshots } from './capture';
 import { HOLD_LABEL, holdPressed, SHORTCUTS, type Command } from './keys';
 import { startRecorder } from './recorder';
+import { loadPageParams, pageLabel, queryParams, routeLikeParams, samePage, savePageParams, type PageParamsPref } from './page-params';
 
 type Mode = 'idle' | 'pick' | 'region';
 
@@ -19,17 +20,8 @@ interface Draft {
 }
 
 const toRect = (r: DOMRect): Rect => ({ x: r.left, y: r.top, width: r.width, height: r.height });
-const samePage = (a: string, b: string) => {
-  try {
-    const ua = new URL(a);
-    const ub = new URL(b);
-    return ua.origin === ub.origin && ua.pathname === ub.pathname;
-  } catch {
-    return a === b;
-  }
-};
 
-type Drawer = 'note' | 'list' | null;
+type Drawer = 'note' | 'list' | 'params' | null;
 
 
 /**
@@ -255,6 +247,29 @@ export function App({ host, api }: { host: HTMLElement; api: FeedbackHost }) {
   }, []);
 
   // ---- Drawer (note / list) that grows out of the toolbar on hover ------------
+  // ---- Which query parameters distinguish pages on this site -----------------
+  const [href, setHref] = useState(location.href);
+  useEffect(() => {
+    const update = () => setHref(location.href);
+    const off = api.onPageEvent((e) => e.type === 'navigate' && update());
+    window.addEventListener('popstate', update);
+    window.addEventListener('hashchange', update);
+    return () => {
+      off();
+      window.removeEventListener('popstate', update);
+      window.removeEventListener('hashchange', update);
+    };
+  }, [api]);
+  const [pageParams, setPageParamsState] = useState<PageParamsPref>(loadPageParams);
+  const pageParamsRef = useRef(pageParams);
+  pageParamsRef.current = pageParams;
+  const setPageParams = (params: string[]) => {
+    const pref = { params, decided: true };
+    savePageParams(pref);
+    setPageParamsState(pref);
+  };
+  const suggestedParams = pageParams.decided ? [] : routeLikeParams(href).filter((p) => !pageParams.params.includes(p));
+
   const [drawer, setDrawer] = useState<Drawer>(null);
   const [drawerPinned, setDrawerPinned] = useState(false);
   const hoverTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -313,9 +328,18 @@ export function App({ host, api }: { host: HTMLElement; api: FeedbackHost }) {
       notify(`Import fehlgeschlagen: ${err instanceof Error ? err.message : err}`);
     }
   };
-  const moreActions: MenuItem[] = api.importExport
-    ? [{ label: 'Nitpick importieren…', run: () => importInput.current?.click() }]
-    : [];
+  const moreActions: MenuItem[] = [
+    ...(api.importExport ? [{ label: 'Nitpick importieren…', run: () => importInput.current?.click() }] : []),
+    {
+      label: 'Seiten unterscheiden nach…',
+      run: () => {
+        // Opened from inside the dock: closes like a hovered drawer once the pointer leaves
+        clearTimeout(hoverTimer.current);
+        setDrawer('params');
+        setDrawerPinned(false);
+      },
+    },
+  ];
 
   // ---- Draggable dock (so elements behind it can be picked) -----------------
   const dockRef = useRef<HTMLDivElement>(null);
@@ -417,7 +441,7 @@ export function App({ host, api }: { host: HTMLElement; api: FeedbackHost }) {
   // One note per page, saved automatically: edits update it, emptying it deletes it.
   const noteQueue = useRef<Promise<unknown>>(Promise.resolve());
   const pageNote = () =>
-    sessionRef.current?.comments.findLast((c) => c.kind === 'note' && samePage(c.url, location.href));
+    sessionRef.current?.comments.findLast((c) => c.kind === 'note' && samePage(c.url, location.href, pageParamsRef.current.params));
   const persistNote = (raw: string) => {
     const text = raw.trim();
     const run = async () => {
@@ -487,7 +511,7 @@ export function App({ host, api }: { host: HTMLElement; api: FeedbackHost }) {
   // Headless mode only applies while recording; a finished session always shows its actions.
   const hidden = session.active && !!session.hidden;
 
-  const commentsHere = session.comments.filter((c) => samePage(c.url, location.href));
+  const commentsHere = session.comments.filter((c) => samePage(c.url, href, pageParams.params));
   const listButton = (
     <button
       className={`af-list-btn${drawer === 'list' ? ' af-on-soft' : ''}`}
@@ -502,7 +526,7 @@ export function App({ host, api }: { host: HTMLElement; api: FeedbackHost }) {
     </button>
   );
   // A finished session is reviewed: the list is simply always open.
-  const shownDrawer: Drawer = session.active ? drawer : 'list';
+  const shownDrawer: Drawer = session.active || drawer === 'params' ? drawer : 'list';
   const flipped = !!dockPos && dockPos.top < window.innerHeight / 2;
 
   return (
@@ -564,10 +588,31 @@ export function App({ host, api }: { host: HTMLElement; api: FeedbackHost }) {
                 onPersist={persistNote}
               />
             )}
-            {shownDrawer === 'list' && <CommentList api={api} session={session} />}
+            {shownDrawer === 'list' && <CommentList api={api} session={session} href={href} pageParams={pageParams.params} />}
+            {shownDrawer === 'params' && <PageParamsForm href={href} chosen={pageParams.params} onChange={setPageParams} />}
           </div>
         </div>
 
+        {!hidden && !asking && suggestedParams.length > 0 && (
+          <div className="af-suggest">
+            <span>
+              Diese Seite nutzt {suggestedParams.map((p, i) => (
+                <span key={p}>
+                  {i > 0 && ', '}
+                  <code>{p}</code>
+                </span>
+              ))}{' '}
+              wie eine Route. Kommentare danach trennen?
+            </span>
+            <span className="af-spacer" />
+            <button className="af-ghost" onClick={() => setPageParams(pageParams.params)}>
+              Nein
+            </button>
+            <button className="af-primary" onClick={() => setPageParams([...pageParams.params, ...suggestedParams])}>
+              Trennen
+            </button>
+          </div>
+        )}
         {!hidden && <div className="af-toolbar">
           <span
             className="af-grip"
@@ -944,47 +989,86 @@ function Pins({ comments, onClick }: { comments: FeedbackComment[]; onClick: () 
       clearInterval(timer);
     };
   }, []);
+  // Hovering a marker previews its comment right there; a short delay lets the pointer move into the preview.
+  const [hovered, setHovered] = useState<string | null>(null);
+  const leaveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const enter = (id: string) => {
+    clearTimeout(leaveTimer.current);
+    setHovered(id);
+  };
+  const leave = () => {
+    clearTimeout(leaveTimer.current);
+    leaveTimer.current = setTimeout(() => setHovered(null), 150);
+  };
+  useEffect(() => () => clearTimeout(leaveTimer.current), []);
+
+  const placed = comments.flatMap((c) => {
+    let target: Rect | undefined;
+    if (c.element) {
+      let el: Element | null = null;
+      try {
+        // Selectors of elements inside iframes are relative to the frame's document
+        if (!c.element.frames) el = document.querySelector(c.element.selector);
+      } catch {
+        // selector may be an xpath fallback
+      }
+      const d = c.element.documentRect;
+      target = el ? toRect(el.getBoundingClientRect()) : { ...d, x: d.x - window.scrollX, y: d.y - window.scrollY };
+    } else if (c.region) {
+      const r = c.region;
+      target = { ...r, x: r.x + c.viewport.scrollX - window.scrollX, y: r.y + c.viewport.scrollY - window.scrollY };
+    }
+    if (!target) return [];
+    return [{ c, target, left: Math.max(4, target.x - 11), top: Math.max(4, target.y - 11) }];
+  });
+  const active = placed.find((p) => p.c.id === hovered);
 
   return (
     <>
-      {comments.map((c) => {
-        let left: number | undefined;
-        let top: number | undefined;
-        if (c.element) {
-          let el: Element | null = null;
-          try {
-            // Selectors of elements inside iframes are relative to the frame's document
-            if (!c.element.frames) el = document.querySelector(c.element.selector);
-          } catch {
-            // selector may be an xpath fallback
-          }
-          if (el) {
-            const r = el.getBoundingClientRect();
-            left = r.left;
-            top = r.top;
-          } else {
-            left = c.element.documentRect.x - window.scrollX;
-            top = c.element.documentRect.y - window.scrollY;
-          }
-        } else if (c.region) {
-          left = c.region.x + c.viewport.scrollX - window.scrollX;
-          top = c.region.y + c.viewport.scrollY - window.scrollY;
-        }
-        if (left == null || top == null) return null;
-        return (
-          <button
-            key={c.id}
-            className="af-pin"
-            style={{ left: Math.max(4, left - 11), top: Math.max(4, top - 11) }}
-            title={c.text}
-            onClick={onClick}
-          >
-            {c.index}
-          </button>
-        );
-      })}
+      {active && <div className="af-highlight af-preview-target" style={rectStyle(active.target)} />}
+      {placed.map(({ c, left, top }) => (
+        <button
+          key={c.id}
+          className="af-pin"
+          style={{ left, top }}
+          aria-label={`Kommentar ${c.index}`}
+          onMouseEnter={() => enter(c.id)}
+          onMouseLeave={leave}
+          onFocus={() => enter(c.id)}
+          onBlur={leave}
+          onClick={onClick}
+        >
+          {c.index}
+        </button>
+      ))}
+      {active && (
+        <div
+          className="af-preview"
+          role="tooltip"
+          style={previewStyle(active.left, active.top)}
+          onMouseEnter={() => enter(active.c.id)}
+          onMouseLeave={leave}
+        >
+          <div className="af-item-head">
+            <span className="af-badge">{active.c.index}</span>
+            <span className="af-muted">{targetLabel(active.c)}</span>
+          </div>
+          <p className="af-item-text">{active.c.text}</p>
+          <div className="af-preview-hint">Klick auf den Marker: in der Liste zeigen</div>
+        </div>
+      )}
     </>
   );
+}
+
+/** Next to the marker (22px), flipped left/up when it would leave the viewport. */
+function previewStyle(pinLeft: number, pinTop: number): React.CSSProperties {
+  const width = 280;
+  const gap = 8;
+  const right = pinLeft + 22 + gap;
+  const left = right + width > window.innerWidth - 8 ? Math.max(8, pinLeft - gap - width) : right;
+  const below = pinTop < window.innerHeight * 0.6;
+  return below ? { left, top: pinTop, width } : { left, bottom: window.innerHeight - pinTop - 22, width };
 }
 
 /**
@@ -1052,7 +1136,41 @@ function NoteForm(props: {
   );
 }
 
-function CommentList({ api, session }: { api: FeedbackHost; session: FeedbackSession }) {
+/** What a comment is about, e.g. `button "Speichern"`, "Bereich" or "Notiz". */
+function targetLabel(c: FeedbackComment): string {
+  if (c.kind === 'region') return 'Bereich';
+  if (!c.element) return 'Notiz';
+  return c.element.name ? `${c.element.role ?? c.element.tag} "${c.element.name}"` : c.element.tag;
+}
+
+/** Checkboxes for the current URL's query parameters (plus chosen ones it lacks); route-like ones are marked. */
+function PageParamsForm({ href, chosen, onChange }: { href: string; chosen: string[]; onChange: (params: string[]) => void }) {
+  const routeLike = routeLikeParams(href);
+  const all = [...new Set([...queryParams(href), ...chosen])];
+  return (
+    <div className="af-drawer-section af-params">
+      <p className="af-muted">
+        Kommentare gelten für Seiten mit gleichem Pfad. Gewählte Parameter müssen zusätzlich übereinstimmen. Gilt für{' '}
+        {location.host}.
+      </p>
+      {!all.length && <p className="af-muted">Die aktuelle URL hat keine Query-Parameter.</p>}
+      {all.map((p) => (
+        <label key={p} className="af-param">
+          <input
+            type="checkbox"
+            checked={chosen.includes(p)}
+            onChange={(e) => onChange(e.currentTarget.checked ? [...chosen, p] : chosen.filter((x) => x !== p))}
+          />
+          <code>{p}</code>
+          {routeLike.includes(p) && <span className="af-muted">sieht aus wie eine Route</span>}
+        </label>
+      ))}
+    </div>
+  );
+}
+
+function CommentList(props: { api: FeedbackHost; session: FeedbackSession; href: string; pageParams: string[] }) {
+  const { api, session, href, pageParams } = props;
   const [editing, setEditing] = useState<string | null>(null);
   const [text, setText] = useState('');
   // The drawer closes as soon as the pointer leaves it: keep an edit in progress instead of dropping it
@@ -1065,32 +1183,28 @@ function CommentList({ api, session }: { api: FeedbackHost; session: FeedbackSes
     },
     [api],
   );
-  const path = (url: string) => {
-    try {
-      return new URL(url).pathname;
-    } catch {
-      return url;
-    }
-  };
-
   return (
     <div className="af-drawer-section af-list">
       {!session.comments.length && <p className="af-muted">Noch keine Kommentare.</p>}
-      {session.comments.map((c) => (
-        <div key={c.id} className="af-item">
+      {session.comments.map((c) => {
+        const here = samePage(c.url, href, pageParams);
+        return (
+        <div key={c.id} className={`af-item${here ? ' af-item-here' : ''}`}>
           <div className="af-item-head">
             <span className="af-badge">{c.index}</span>
-            <span className="af-muted">
-              {path(c.url)} ·{' '}
-              {c.kind === 'region'
-                ? 'Bereich'
-                : c.element
-                ? c.element.name
-                  ? `${c.element.role ?? c.element.tag} "${c.element.name}"`
-                  : c.element.tag
-                : 'Notiz'}
-            </span>
+            <span className="af-muted">{targetLabel(c)}</span>
+            {here && <span className="af-here">Diese Seite</span>}
           </div>
+          {here ? (
+            <div className="af-item-page" title={c.url}>
+              {pageLabel(c.url, pageParams)}
+            </div>
+          ) : (
+            // A plain link: the browser reloads the page (the session survives that); Ctrl/⌘-click opens a tab
+            <a className="af-item-page" href={c.url} title={`Zur Seite: ${c.url}`}>
+              {pageLabel(c.url, pageParams)}
+            </a>
+          )}
           {editing === c.id ? (
             <>
               <textarea autoFocus value={text} onChange={(e) => setText(e.target.value)} />
@@ -1133,7 +1247,8 @@ function CommentList({ api, session }: { api: FeedbackHost; session: FeedbackSes
             </>
           )}
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

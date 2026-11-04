@@ -51,6 +51,14 @@ Für Firefox `pnpm build:firefox` ausführen und `.output/firefox-mv3/manifest.j
 
 Kommentare, Timeline und Console-Errors bleiben über Navigationen, Reloads und Login-Redirects auf andere Domains hinweg erhalten. Aufgezeichnet wird nur der Tab, in dem die Session läuft, und Tabs, die daraus geöffnet oder kommentiert werden. Elemente in iframes lassen sich ebenfalls auswählen, auch bei anderer Domain.
 
+### Seiten mit Route im Query-Parameter
+
+Marker und Seiten-Notizen gelten für alle URLs mit gleichem Pfad, Query-Parameter zählen normalerweise nicht. Manche Apps spiegeln ihre Route aber in einen Parameter, z. B. per iframe eingebundene Apps: `…/view?_route=%2Fteams%2Fproblems`. Dann lässt sich pro Website festlegen, dass dieser Parameter zur Seite gehört:
+- Sieht ein Parameter wie ein Pfad aus, schlägt die Toolbar einmalig vor, Kommentare danach zu trennen. Angewendet wird nichts ohne Bestätigung.
+- **…** → **Seiten unterscheiden nach…** zeigt alle Parameter der aktuellen URL zum An- und Abwählen.
+
+Exporte enthalten immer die volle URL. Die Einstellung wirkt deshalb auch auf ältere und importierte Nitpicks.
+
 ### Tastenkürzel
 
 | Kürzel | Aktion |

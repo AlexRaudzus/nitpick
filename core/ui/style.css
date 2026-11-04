@@ -245,3 +245,73 @@
 
 .af-confirm-question { padding: 0 6px; color: #fca5a5; font-weight: 600; white-space: nowrap; }
 .af-root button.af-danger-solid { background: #dc2626; border-color: #dc2626; color: #fff; font-weight: 600; }
+
+/* Page parameters: one-time suggestion above the toolbar, and the drawer to choose them */
+/* width: 0 + min-width: 100% like the drawer: the suggestion wraps instead of widening the dock */
+.af-suggest {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  width: 0;
+  min-width: 100%;
+  box-sizing: border-box;
+  padding: 8px 8px 8px 12px;
+  border-bottom: 1px solid var(--af-border);
+  line-height: 1.4;
+}
+.af-dock-top .af-suggest { border-bottom: 0; border-top: 1px solid var(--af-border); }
+.af-suggest > span:first-child { flex: 1 1 220px; }
+.af-suggest code, .af-params code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.92em; }
+.af-params p { margin: 0 0 8px; line-height: 1.4; }
+.af-param { display: flex; align-items: center; gap: 8px; padding: 4px 0; cursor: pointer; }
+.af-param input { margin: 0; accent-color: var(--af-accent); }
+.af-param .af-muted { font-size: 11px; }
+/* The page of a comment: full label, wrapping (routes are long); a link unless it is the current page */
+.af-item-page { display: block; margin: 4px 0 0 28px; font-size: 11px; line-height: 1.35; color: var(--af-muted); overflow-wrap: anywhere; }
+a.af-item-page { text-decoration: underline; text-decoration-color: var(--af-border); text-underline-offset: 2px; }
+a.af-item-page:hover { color: var(--af-fg); text-decoration-color: currentColor; }
+/* Comments on the current page: tinted row plus a neutral pill (red would read as an error) */
+.af-item-here {
+  margin: 0 -12px;
+  padding-left: 12px;
+  padding-right: 12px;
+  background: color-mix(in srgb, var(--af-fg) 5%, transparent);
+}
+.af-here {
+  flex: none;
+  margin-left: auto;
+  padding: 1px 7px;
+  border: 1px solid var(--af-border);
+  border-radius: 999px;
+  background: var(--af-bg-2);
+  color: var(--af-fg);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+/* Hover preview next to a marker, styled like the composer */
+.af-preview {
+  position: fixed;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  background: var(--af-bg);
+  border: 1px solid var(--af-border);
+  border-radius: 11px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+  pointer-events: auto;
+}
+.af-preview .af-item-text { max-height: 40vh; overflow-y: auto; }
+.af-preview-hint { font-size: 11px; color: var(--af-muted); }
+.af-preview-target { background: rgba(255, 59, 107, 0.05); outline-style: dashed; }
+
+/* Subtle scrollbars for everything that scrolls inside the UI (list, preview, textareas) */
+.af-root * { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--af-fg) 22%, transparent) transparent; }
+.af-root *::-webkit-scrollbar { width: 8px; height: 8px; }
+.af-root *::-webkit-scrollbar-track { background: transparent; }
+.af-root *::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--af-fg) 22%, transparent) padding-box;
+}
+.af-root *::-webkit-scrollbar-thumb:hover { background-color: color-mix(in srgb, var(--af-fg) 38%, transparent); }
