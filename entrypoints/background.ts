@@ -117,6 +117,8 @@ async function onRequest(req: Request, sender: Browser.runtime.MessageSender): P
       return store.discard();
     case 'session:hidden':
       return store.setHidden(req.hidden);
+    case 'session:import':
+      return store.importSession(req.data, sender.tab?.id);
     case 'capture:viewport': {
       const windowId = sender.tab?.windowId;
       if (windowId == null) throw new Error('Kein Tab');

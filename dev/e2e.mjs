@@ -1,7 +1,7 @@
 // End-to-end smoke test: loads the built extension into Chromium and runs a feedback session.
 // Usage: pnpm build && pnpm e2e   (artifacts land in test-results/)
 import { chromium } from 'playwright';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { server } from './serve.mjs';
@@ -289,6 +289,47 @@ try {
   // icon click on a running hidden session shows the toolbar again
   await clickIcon();
   await toolbar.waitFor({ timeout: 2000 });
+
+  // Import: the first export, laid out on disk like the real export folder, replaces the current session
+  const importDir = join(out, 'import', 'nitpick-export');
+  mkdirSync(join(importDir, 'screenshots'), { recursive: true });
+  const exported = {
+    format: 'nitpick/v1',
+    ...result.session,
+    comments: result.session.comments.map((c) => {
+      const screenshots = {};
+      for (const [kind, id] of Object.entries(c.screenshots)) {
+        const data = result.assets[`asset:${id}`];
+        if (!data) continue;
+        screenshots[kind] = `screenshots/${String(c.index).padStart(2, '0')}-${kind}.png`;
+        writeFileSync(join(importDir, screenshots[kind]), Buffer.from(data.split(',')[1], 'base64'));
+      }
+      return { ...c, screenshots };
+    }),
+  };
+  writeFileSync(join(importDir, 'feedback.json'), JSON.stringify(exported));
+  await page.click('h1', { modifiers: ['Control', 'Alt'] });
+  await composer.fill('Wird ersetzt');
+  await composer.press('Control+Enter');
+  await toolbar.getByRole('button', { name: 'Liste (1)' }).waitFor({ timeout: 5000 });
+  await toolbar.getByRole('button', { name: 'Weitere Aktionen' }).click();
+  const importItem = page.locator('nitpick-ui .af-menu').getByRole('menuitem', { name: 'Nitpick importieren…' });
+  await importItem.waitFor({ timeout: 2000 });
+  await page.keyboard.press('Escape');
+  // Playwright can't hand a folder to this input (its setFiles stalls), so the files go in one by one
+  const importInput = page.locator('nitpick-ui input[type=file]');
+  await importInput.evaluate((i) => i.removeAttribute('webkitdirectory'));
+  await importInput.evaluate((i) => (i.multiple = true));
+  await importInput.setInputFiles([join(importDir, 'feedback.json'), ...readdirSync(join(importDir, 'screenshots')).map((f) => join(importDir, 'screenshots', f))]);
+  await toolbar.getByText('Den Kommentar durch den Import ersetzen?').waitFor({ timeout: 2000 });
+  await toolbar.getByRole('button', { name: 'Ersetzen' }).click();
+  await toast.filter({ hasText: `${result.session.comments.length} Kommentare importiert` }).waitFor({ timeout: 5000 });
+  await toolbar.getByRole('button', { name: 'Fortsetzen' }).waitFor({ timeout: 2000 });
+  const imported = await stored();
+  if (imported.active || imported.comments.length !== result.session.comments.length) fail(`import: unexpected session ${JSON.stringify(imported)?.slice(0, 200)}`);
+  const importedShots = await sw.evaluate(async () => Object.keys(await chrome.storage.local.get(null)).filter((k) => k.startsWith('asset:')).length);
+  if (importedShots !== Object.keys(result.assets).length) fail(`import: ${importedShots} screenshots instead of ${Object.keys(result.assets).length}`);
+  await page.screenshot({ path: join(out, 'imported.png') });
 
   if (!process.exitCode) console.log(`✓ e2e passed – ${result.exp.data.files} files exported, artifacts in test-results/`);
 } catch (err) {

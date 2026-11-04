@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createSessionStore, type KVBackend } from '@/core/session-store';
 import type { NewComment } from '@/core/host';
+import { parseSession, readExportFolder } from '@/core/import';
 
 function memoryKV(): KVBackend & { data: Map<string, unknown> } {
   const data = new Map<string, unknown>();
@@ -109,5 +110,53 @@ describe('session store', () => {
     await store.addTab(9);
     await store.addTab(9);
     expect((await store.load())!.tabs).toEqual([7, 9]);
+  });
+
+  it('round-trips an export: same markdown and screenshots, back as a finished session', async () => {
+    const source = createSessionStore(memoryKV());
+    await source.start({ url, title: 'Settings' }, 3);
+    await source.addComment(comment('eins'), { viewport: 'data:image/png;base64,AA==', crop: 'data:image/png;base64,AQ==' });
+    await source.addComment(comment('zwei'), {});
+    await source.stop();
+    const exported = await source.bundle(0);
+
+    const target = createSessionStore(memoryKV());
+    await target.start({ url: 'http://other/' });
+    await target.addComment(comment('alt'), { viewport: 'data:image/png;base64,Ag==' });
+    const assets = Object.fromEntries(exported.assets.map((a) => [a.name, a.dataUrl]));
+    const s = await target.importSession({ session: parseSession(JSON.parse(exported.json)), assets }, 11);
+
+    expect(s.active).toBe(false);
+    expect(s.tabs).toEqual([11]);
+    expect(s.comments.map((c) => c.text)).toEqual(['eins', 'zwei']);
+    const again = await target.bundle(0);
+    expect(again.markdown).toBe(exported.markdown);
+    expect(again.assets).toEqual(exported.assets);
+    // The replaced session's screenshot is gone
+    expect((await target.bundle(0)).assets).toHaveLength(2);
+    // Resuming continues the numbering
+    await target.resume();
+    expect((await target.addComment(comment('drei'), {})).index).toBe(3);
+  });
+
+  it('reads an export folder and rejects anything else', async () => {
+    const source = createSessionStore(memoryKV());
+    await source.start({ url });
+    await source.addComment(comment('eins'), { crop: 'data:image/png;base64,AQ==' });
+    const { json } = await source.bundle(0);
+    const file = (path: string, body: BlobPart) => {
+      const f = new File([body], path.split('/').pop()!);
+      Object.defineProperty(f, 'webkitRelativePath', { value: path });
+      return f;
+    };
+    const png = file('nitpick/x/screenshots/01-crop.png', new Uint8Array([1]));
+    const read = await readExportFolder([file('nitpick/x/feedback.json', json), png, file('nitpick/x/feedback.md', '#')]);
+    expect(read.session.comments[0]?.text).toBe('eins');
+    expect(Object.keys(read.assets)).toEqual(['screenshots/01-crop.png']);
+    expect(read.assets['screenshots/01-crop.png']).toMatch(/^data:/);
+
+    await expect(readExportFolder([png])).rejects.toThrow('Keine feedback.json');
+    await expect(readExportFolder([file('a/feedback.json', '{}')])).rejects.toThrow('Kein Nitpick-Export');
+    await expect(readExportFolder([file('a/feedback.json', json), file('b/feedback.json', json)])).rejects.toThrow('Mehrere');
   });
 });

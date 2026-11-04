@@ -1,6 +1,7 @@
 import { browser, type Browser } from 'wxt/browser';
 import type { FeedbackComment, FeedbackSession, LogEntry, TimelineEvent } from '@/core/types';
 import type { ComponentInfo, NewComment, PageEvent, Screenshots } from '@/core/host';
+import type { ImportedExport } from '@/core/import';
 
 /** Messages from content script / popup to the background service worker. */
 export type Request =
@@ -10,6 +11,7 @@ export type Request =
   | { type: 'session:resume' }
   | { type: 'session:discard' }
   | { type: 'session:hidden'; hidden: boolean }
+  | { type: 'session:import'; data: ImportedExport }
   | { type: 'capture:viewport' }
   | {
       type: 'comment:add';
@@ -32,6 +34,7 @@ export interface ResponseMap {
   'session:resume': FeedbackSession | null;
   'session:discard': null;
   'session:hidden': null;
+  'session:import': FeedbackSession;
   'capture:viewport': string;
   'comment:add': FeedbackComment;
   'comment:update': null;

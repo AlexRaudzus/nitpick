@@ -1,4 +1,5 @@
 import type { NewComment, Screenshots } from './host';
+import type { ImportedExport } from './import';
 import { assetFileNames, exportFolderName, renderJson, renderMarkdown } from './render';
 import type { FeedbackComment, FeedbackSession, LogEntry, TimelineEvent } from './types';
 
@@ -208,6 +209,35 @@ export function createSessionStore(kv: KVBackend) {
         s.metadata[origin] = metadata;
       });
     },
+
+    /**
+     * Replaces the current session with a previous export. It comes back finished, so it can be
+     * reviewed, resumed or exported again; tabs start over with `tabId`.
+     */
+    importSession: ({ session, assets }: ImportedExport, tabId?: number) =>
+      serialized(async () => {
+        await save(null);
+        await clearAssets();
+        const ids = new Map<string, string | undefined>();
+        for (const [path, dataUrl] of Object.entries(assets)) ids.set(path, await storeAsset(dataUrl));
+        const imported: FeedbackSession = {
+          ...session,
+          id: uid(),
+          active: false,
+          endedAt: session.endedAt ?? Date.now(),
+          hidden: undefined,
+          tabs: tabId != null ? [tabId] : undefined,
+          comments: session.comments.map((c) => ({
+            ...c,
+            screenshots: {
+              viewport: c.screenshots.viewport ? ids.get(c.screenshots.viewport) : undefined,
+              crop: c.screenshots.crop ? ids.get(c.screenshots.crop) : undefined,
+            },
+          })),
+        };
+        await save(imported);
+        return imported;
+      }),
 
     /** Markdown, JSON and screenshots, ready to be written to disk or attached to a ticket. */
     async bundle(exportedAt = Date.now()): Promise<ExportBundle> {

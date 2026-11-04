@@ -1,3 +1,4 @@
+import type { ImportedExport } from './import';
 import type { ElementDescriptor, FeedbackComment, FeedbackSession, LogEntry, Rect, TimelineEvent } from './types';
 
 export type NewComment = Omit<FeedbackComment, 'id' | 'index' | 'timelineIndex' | 'screenshots'>;
@@ -57,6 +58,8 @@ export interface FeedbackHost {
 
   // Shell specifics
   finishActions: FinishAction[];
+  /** Replaces the session with a previous export (offered in the toolbar's "…" menu when present). */
+  importExport?(data: ImportedExport): Promise<void>;
   /** External triggers, e.g. browser keyboard commands or the extension icon's context menu. */
   onCommand?(cb: (command: HostCommand) => void): () => void;
   /** Picking inside iframes (extension: also cross-origin). */

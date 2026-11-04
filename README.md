@@ -47,6 +47,7 @@ Für Firefox `pnpm build:firefox` ausführen und `.output/firefox-mv3/manifest.j
    - **⠿** – Toolbar verschieben, z. B. um Elemente dahinter auszuwählen. Die Position wird pro Website gemerkt, ein Doppelklick setzt sie zurück.
    - **⌄** – Toolbar ausblenden (Headless-Modus)
 4. **Fertig** → **Exportieren** schreibt nach `~/Downloads/nitpick/<datum>_<uhrzeit>_<host>/` und legt den Ordnerpfad in die Zwischenablage. Danach ist die Session abgeschlossen und geleert. Über den Pfeil daneben lässt sich alternativ nur das Markdown kopieren.
+5. **…** → **Nitpick importieren…** lädt einen früheren Export-Ordner wieder in die Toolbar, um daran weiterzuarbeiten: Kommentare bearbeiten, mit **Fortsetzen** weiter kommentieren oder neu exportieren. Eine vorhandene Session wird dabei ersetzt, mit Rückfrage, falls sie Kommentare enthält.
 
 Kommentare, Timeline und Console-Errors bleiben über Navigationen, Reloads und Login-Redirects auf andere Domains hinweg erhalten. Aufgezeichnet wird nur der Tab, in dem die Session läuft, und Tabs, die daraus geöffnet oder kommentiert werden. Elemente in iframes lassen sich ebenfalls auswählen, auch bei anderer Domain.
 

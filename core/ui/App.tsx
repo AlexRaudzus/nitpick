@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { describeElement } from '../describe-element';
 import type { FeedbackHost, FinishAction } from '../host';
+import { readExportFolder, type ImportedExport } from '../import';
 import type { CommentKind, ElementDescriptor, FeedbackComment, FeedbackSession, Rect } from '../types';
 import { captureScreenshots } from './capture';
 import { HOLD_LABEL, holdPressed, SHORTCUTS, type Command } from './keys';
@@ -275,14 +276,46 @@ export function App({ host, api }: { host: HTMLElement; api: FeedbackHost }) {
   };
 
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  /** A picked export waiting for "replace the current comments?" */
+  const [pendingImport, setPendingImport] = useState<ImportedExport | null>(null);
+  const asking = confirmDiscard || !!pendingImport;
   useEffect(() => {
-    if (!confirmDiscard) return;
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setConfirmDiscard(false);
+    if (!asking) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      setConfirmDiscard(false);
+      setPendingImport(null);
+    };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [confirmDiscard]);
+  }, [asking]);
   // A new or resumed session never starts in the question
-  useEffect(() => setConfirmDiscard(false), [session?.id, session?.active]);
+  useEffect(() => {
+    setConfirmDiscard(false);
+    setPendingImport(null);
+  }, [session?.id, session?.active]);
+
+  // ---- Import of a previous export ------------------------------------------
+  const importInput = useRef<HTMLInputElement>(null);
+  const runImport = (data: ImportedExport) =>
+    runAction(async () => {
+      setPendingImport(null);
+      await api.importExport!(data);
+      const n = data.session.comments.length;
+      return `${n === 1 ? '1 Kommentar' : `${n} Kommentare`} importiert · Fortsetzen zum Weiterkommentieren`;
+    });
+  const onImportPicked = async (files: File[]) => {
+    try {
+      const data = await readExportFolder(files);
+      if (sessionRef.current?.comments.length) setPendingImport(data);
+      else runImport(data);
+    } catch (err) {
+      notify(`Import fehlgeschlagen: ${err instanceof Error ? err.message : err}`);
+    }
+  };
+  const moreActions: MenuItem[] = api.importExport
+    ? [{ label: 'Nitpick importieren…', run: () => importInput.current?.click() }]
+    : [];
 
   // ---- Draggable dock (so elements behind it can be picked) -----------------
   const dockRef = useRef<HTMLDivElement>(null);
@@ -544,7 +577,35 @@ export function App({ host, api }: { host: HTMLElement; api: FeedbackHost }) {
           >
             <GripIcon />
           </span>
-          {session.active ? (
+          {asking ? (
+            // Asking replaces the whole row: nothing else to click while deciding
+            <>
+              <span className="af-confirm-question">
+                {pendingImport
+                  ? `${session.comments.length === 1 ? 'Den Kommentar' : `Die ${session.comments.length} Kommentare`} durch den Import ersetzen?`
+                  : `${session.comments.length === 1 ? 'Den Kommentar' : `Alle ${session.comments.length} Kommentare`} verwerfen?`}
+              </span>
+              <span className="af-spacer" />
+              <button
+                autoFocus
+                onClick={() => {
+                  setConfirmDiscard(false);
+                  setPendingImport(null);
+                }}
+              >
+                Abbrechen
+              </button>
+              {pendingImport ? (
+                <button className="af-danger-solid" onClick={() => runImport(pendingImport)}>
+                  Ersetzen
+                </button>
+              ) : (
+                <button className="af-danger-solid" onClick={() => api.discard()}>
+                  Verwerfen
+                </button>
+              )}
+            </>
+          ) : session.active ? (
             <>
               {listButton}
               <button
@@ -581,22 +642,9 @@ export function App({ host, api }: { host: HTMLElement; api: FeedbackHost }) {
               <button className="af-primary" onClick={() => api.stop()}>
                 Fertig
               </button>
+              <MoreMenu items={moreActions} />
               <button className="af-icon" title={`Toolbar ausblenden – alles per Tastenkürzel (${HOLD_LABEL}+H)`} onClick={() => api.setHidden(true)}>
                 ⌄
-              </button>
-            </>
-          ) : confirmDiscard ? (
-            // Asking replaces the whole row: nothing else to click while deciding
-            <>
-              <span className="af-confirm-question">
-                {session.comments.length === 1 ? 'Den Kommentar' : `Alle ${session.comments.length} Kommentare`} verwerfen?
-              </span>
-              <span className="af-spacer" />
-              <button autoFocus onClick={() => setConfirmDiscard(false)}>
-                Abbrechen
-              </button>
-              <button className="af-danger-solid" onClick={() => api.discard()}>
-                Verwerfen
               </button>
             </>
           ) : (
@@ -611,6 +659,7 @@ export function App({ host, api }: { host: HTMLElement; api: FeedbackHost }) {
               >
                 Verwerfen
               </button>
+              <MoreMenu items={moreActions} className="af-ghost" />
               <span className="af-spacer" />
               {session.comments.length > 0 && <SplitButton actions={api.finishActions} run={runAction} />}
             </>
@@ -626,6 +675,21 @@ export function App({ host, api }: { host: HTMLElement; api: FeedbackHost }) {
       {mode === 'region' && <div className="af-hint">Bereich aufziehen · Esc abbrechen</div>}
       {oneShot && mode === 'pick' && <div className="af-hint">Element anklicken · ↑ Elternelement · Esc abbrechen</div>}
       {toast && <div className="af-toast">{toast}</div>}
+      {api.importExport && (
+        <input
+          ref={(el) => {
+            importInput.current = el;
+            el?.setAttribute('webkitdirectory', '');
+          }}
+          type="file"
+          hidden
+          onChange={(e) => {
+            const files = [...(e.currentTarget.files ?? [])];
+            e.currentTarget.value = '';
+            if (files.length) onImportPicked(files);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -633,18 +697,19 @@ export function App({ host, api }: { host: HTMLElement; api: FeedbackHost }) {
 /** Position of the toolbar row (the drawer opens away from the closer screen edge). */
 type DockPos = { right: number; top: number };
 
-/** "Exportieren | ▾": the main action plus a menu with all variants. */
-function SplitButton({ actions, run }: { actions: FinishAction[]; run: (fn: () => Promise<string | void>) => void }) {
-  const [menu, setMenu] = useState<React.CSSProperties | null>(null);
-  const caret = useRef<HTMLButtonElement>(null);
-  const [main] = actions;
+type MenuItem = { label: string; run: () => void };
+
+/** Fixed-position menu under/over its trigger; the dock clips overflow, so it can't live inside it. */
+function useAnchoredMenu() {
+  const [style, setStyle] = useState<React.CSSProperties | null>(null);
+  const anchor = useRef<HTMLButtonElement>(null);
   useEffect(() => {
-    if (!menu) return;
+    if (!style) return;
     const close = (e: Event) => {
       if (e instanceof KeyboardEvent && e.key !== 'Escape') return;
-      setMenu(null);
+      setStyle(null);
     };
-    // The dock clips overflow, so the menu is fixed-positioned; scrolling/resizing would detach it.
+    // Scrolling/resizing would detach the fixed menu from its trigger.
     window.addEventListener('keydown', close, true);
     window.addEventListener('resize', close);
     window.addEventListener('scroll', close, true);
@@ -653,16 +718,44 @@ function SplitButton({ actions, run }: { actions: FinishAction[]; run: (fn: () =
       window.removeEventListener('resize', close);
       window.removeEventListener('scroll', close, true);
     };
-  }, [menu]);
-  if (!main) return null;
-  const open = () => {
-    const r = caret.current!.getBoundingClientRect();
+  }, [style]);
+  const toggle = () => {
+    if (style) return setStyle(null);
+    const r = anchor.current!.getBoundingClientRect();
     const up = r.top > window.innerHeight / 2;
-    setMenu({
+    setStyle({
       right: window.innerWidth - r.right,
       ...(up ? { bottom: window.innerHeight - r.top + 6 } : { top: r.bottom + 6 }),
     });
   };
+  const render = (items: MenuItem[]) =>
+    style && (
+      <>
+        <div className="af-menu-backdrop" onClick={() => setStyle(null)} />
+        <div className="af-menu" role="menu" style={style}>
+          {items.map((item) => (
+            <button
+              key={item.label}
+              role="menuitem"
+              onClick={() => {
+                setStyle(null);
+                item.run();
+              }}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </>
+    );
+  return { anchor, open: !!style, toggle, render };
+}
+
+/** "Exportieren | ▾": the main action plus a menu with all variants. */
+function SplitButton({ actions, run }: { actions: FinishAction[]; run: (fn: () => Promise<string | void>) => void }) {
+  const menu = useAnchoredMenu();
+  const [main] = actions;
+  if (!main) return null;
   return (
     <span className="af-split">
       <button className="af-primary" onClick={() => run(main.run)}>
@@ -670,39 +763,36 @@ function SplitButton({ actions, run }: { actions: FinishAction[]; run: (fn: () =
       </button>
       {actions.length > 1 && (
         <button
-          ref={caret}
+          ref={menu.anchor}
           className="af-primary af-caret"
           aria-label="Weitere Export-Optionen"
-          aria-expanded={!!menu}
-          onClick={() => (menu ? setMenu(null) : open())}
+          aria-expanded={menu.open}
+          onClick={menu.toggle}
         >
           <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
             <path d="M2 3.5 5 6.5 8 3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </button>
       )}
-      {menu && (
-        <>
-          <div className="af-menu-backdrop" onClick={() => setMenu(null)} />
-          <div className="af-menu" role="menu" style={menu}>
-            {actions.map((a) => (
-              <button
-                key={a.label}
-                role="menuitem"
-                onClick={() => {
-                  setMenu(null);
-                  run(a.run);
-                }}
-              >
-                {a.menuLabel ?? a.label}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
+      {menu.render(actions.map((a) => ({ label: a.menuLabel ?? a.label, run: () => run(a.run) })))}
     </span>
   );
 }
+
+/** "…": rarely needed actions such as importing a previous export. */
+function MoreMenu({ items, className = '' }: { items: MenuItem[]; className?: string }) {
+  const menu = useAnchoredMenu();
+  if (!items.length) return null;
+  return (
+    <>
+      <button ref={menu.anchor} className={`af-icon ${className}`} aria-label="Weitere Aktionen" title="Weitere Aktionen" aria-expanded={menu.open} onClick={menu.toggle}>
+        …
+      </button>
+      {menu.render(items)}
+    </>
+  );
+}
+
 /** Per site, like the page layout it has to make room for. */
 const DOCK_KEY = 'nitpick:dock';
 function loadDockPos(): DockPos | null {

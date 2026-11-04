@@ -21,6 +21,7 @@ export function createExtensionHost(): FeedbackHost {
     resume: async () => void (await send({ type: 'session:resume' })),
     discard: async () => void (await send({ type: 'session:discard' })),
     setHidden: async (hidden) => void (await send({ type: 'session:hidden', hidden })),
+    importExport: async (data) => void (await send({ type: 'session:import', data })),
     addComment: (comment, screenshots) => send({ type: 'comment:add', comment, screenshots }),
     updateComment: async (id, text) => void (await send({ type: 'comment:update', id, text })),
     deleteComment: async (id) => void (await send({ type: 'comment:delete', id })),
